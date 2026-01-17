@@ -44,6 +44,15 @@ function initElements() {
     elements.btnExportCsv = document.getElementById('btn-export-csv');
     elements.importFile = document.getElementById('import-file');
 
+    // Folder Sync Elements
+    elements.btnSelectFolder = document.getElementById('btn-select-folder');
+    elements.selectedFolderInfo = document.getElementById('selected-folder-info');
+    elements.folderSyncActions = document.getElementById('folder-sync-actions');
+    elements.btnFolderSyncPush = document.getElementById('btn-folder-sync-push');
+    elements.btnFolderSyncPull = document.getElementById('btn-folder-sync-pull');
+    elements.btnFolderUnlink = document.getElementById('btn-folder-unlink');
+    elements.folderSyncStatus = document.getElementById('folder-sync-status');
+
     // Modals
     elements.modalNote = document.getElementById('modal-note');
     elements.noteInput = document.getElementById('note-input');
@@ -519,6 +528,119 @@ function downloadFile(content, filename, mimeType) {
     URL.revokeObjectURL(url);
 }
 
+// ============================================
+// Folder Sync Operations
+// ============================================
+async function selectFolder() {
+    try {
+        const handle = await FolderSync.requestDirectoryAccess();
+        if (handle) {
+            updateFolderSyncUI(true);
+            elements.folderSyncStatus.textContent = `選択中: ${handle.name}`;
+            elements.folderSyncStatus.className = 'hint success';
+        }
+    } catch (error) {
+        console.error('Folder selection failed:', error);
+        elements.folderSyncStatus.textContent = 'フォルダ選択エラー';
+        elements.folderSyncStatus.className = 'hint error';
+    }
+}
+
+async function updateFolderSyncUI(hasHandle) {
+    if (hasHandle) {
+        elements.selectedFolderInfo.style.display = 'inline-block';
+        elements.folderSyncActions.style.display = 'block';
+        elements.btnSelectFolder.textContent = '📁 フォルダを変更';
+    } else {
+        elements.selectedFolderInfo.style.display = 'none';
+        elements.folderSyncActions.style.display = 'none';
+        elements.btnSelectFolder.textContent = '📁 フォルダを選択';
+        elements.folderSyncStatus.textContent = '';
+    }
+}
+
+async function pushToFolder() {
+    try {
+        elements.btnFolderSyncPush.disabled = true;
+        elements.folderSyncStatus.textContent = 'エクスポート中...';
+
+        const collectionsData = {
+            collections: state.collections,
+            exportedAt: Date.now()
+        };
+
+        await FolderSync.pushToFolder(collectionsData, (status) => {
+            elements.folderSyncStatus.textContent = status;
+        });
+
+        elements.folderSyncStatus.textContent = '✅ エクスポート成功';
+        elements.folderSyncStatus.className = 'hint success';
+        setTimeout(() => {
+            elements.folderSyncStatus.textContent = '';
+        }, 3000);
+
+    } catch (error) {
+        console.error('Push failed:', error);
+        elements.folderSyncStatus.textContent = `エラー: ${error.message}`;
+        elements.folderSyncStatus.className = 'hint error';
+    } finally {
+        elements.btnFolderSyncPush.disabled = false;
+    }
+}
+
+async function pullFromFolder() {
+    if (!confirm('現在のデータを上書きしてフォルダからインポートしますか？')) return;
+
+    try {
+        elements.btnFolderSyncPull.disabled = true;
+        elements.folderSyncStatus.textContent = 'インポート中...';
+
+        const data = await FolderSync.pullFromFolder((status) => {
+            elements.folderSyncStatus.textContent = status;
+        });
+
+        if (data && data.collections) {
+            const response = await sendMessage({
+                action: 'importJson',
+                data: JSON.stringify(data) // importJson expects string
+            });
+
+            if (response.success) {
+                await loadCollections();
+                elements.folderSyncStatus.textContent = '✅ インポート成功';
+                elements.folderSyncStatus.className = 'hint success';
+                setTimeout(() => {
+                    elements.folderSyncStatus.textContent = '';
+                }, 3000);
+            }
+        } else {
+            throw new Error('無効なデータ形式です');
+        }
+
+    } catch (error) {
+        console.error('Pull failed:', error);
+        elements.folderSyncStatus.textContent = `エラー: ${error.message}`;
+        elements.folderSyncStatus.className = 'hint error';
+    } finally {
+        elements.btnFolderSyncPull.disabled = false;
+    }
+}
+
+async function unlinkFolder() {
+    if (!confirm('このフォルダとの連携を解除しますか？\n(実際のファイルは削除されません)')) return;
+
+    await FolderSync.clearSavedHandle();
+    updateFolderSyncUI(false);
+}
+
+async function checkFolderSyncStatus() {
+    const handle = await FolderSync.getSavedDirectoryHandle();
+    if (handle) {
+        updateFolderSyncUI(true);
+        elements.folderSyncStatus.textContent = `選択中: ${handle.name}`;
+    }
+}
+
 async function importFromJson(file) {
     const text = await file.text();
     const response = await sendMessage({ action: 'importJson', data: text });
@@ -604,6 +726,12 @@ function setupEventListeners() {
         }
     });
 
+    // Folder Sync
+    elements.btnSelectFolder.addEventListener('click', selectFolder);
+    elements.btnFolderSyncPush.addEventListener('click', pushToFolder);
+    elements.btnFolderSyncPull.addEventListener('click', pullFromFolder);
+    elements.btnFolderUnlink.addEventListener('click', unlinkFolder);
+
     // Close modals on backdrop click
     [elements.modalNote, elements.modalCollectionMenu].forEach(modal => {
         modal.addEventListener('click', (e) => {
@@ -640,6 +768,7 @@ async function init() {
     setupEventListeners();
     await loadSettings();
     await loadCollections();
+    await checkFolderSyncStatus();
     showView('list');
 }
 

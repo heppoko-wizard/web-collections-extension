@@ -81,6 +81,24 @@
             </div>
           </div>
 
+          <!-- 📁 ローカルフォルダ同期 -->
+          <div class="settings-section">
+            <h3>📁 ローカルフォルダ同期</h3>
+            <p class="hint">OneDriveやGoogle Driveの同期フォルダを指定できます</p>
+            <div class="setting-item">
+              <button id="btn-select-folder" class="btn btn-secondary">📁 フォルダを選択</button>
+              <div id="selected-folder-info" style="display: none; margin-left: 10px;">
+                <span class="folder-path-label">✅ 設定済み</span>
+              </div>
+            </div>
+            <div class="setting-item" id="folder-sync-actions" style="display: none;">
+              <button id="btn-folder-sync-push" class="btn btn-primary">⬆️ エクスポート</button>
+              <button id="btn-folder-sync-pull" class="btn btn-secondary">⬇️ インポート</button>
+              <button id="btn-folder-unlink" class="btn btn-secondary" title="連携を解除">🔗 解除</button>
+            </div>
+            <p id="folder-sync-status" class="hint"></p>
+          </div>
+
           <!-- エクスポート・インポート -->
           <div class="settings-section">
             <h3>📦 データ管理</h3>
@@ -120,6 +138,7 @@
   </div>
 
   <script src="../js/gist-sync.js"></script>
+  <script src="../js/folder-sync.js"></script>
   <script src="../js/image-optimizer.js"></script>
   <script src="../js/panel.js"></script>
 </body>
