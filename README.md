@@ -1,96 +1,96 @@
 # Web Collections (Edge Collections Alternative)
 
-Microsoft Edgeの便利な「コレクション」機能を、Chromeやその他のChromiumブラウザでも使えるようにする拡張機能です。
-さらに、独自の同期システムにより、特定のブラウザベンダーに依存しない、自由でプライベートなデータ管理を実現します。
+A cross-browser extension that replicates Microsoft Edge's "Collections" feature, bringing it to Chrome, Brave, Vivaldi, and other Chromium browsers.
+It features a unique hybrid sync system that gives you full ownership of your data, free from vendor lock-in.
 
 ![Icon](icons/icon128.png)
 
-## ✨ 特徴と独自性 (Why Web Collections?)
+---
 
-### 1. ベンダーロックインからの解放
+**[日本語の説明はこちら (Japanese)](#-web-collections-日本語)**
 
-Edge Collectionsは素晴らしい機能ですが、Edgeブラウザでしか使えません。この拡張機能を使えば、Chrome、Brave、Vivaldiなど、好きなChromiumブラウザでコレクション機能が使えます。
+---
 
-### 2. 選べる同期バックエンド
+## ✨ Why Web Collections?
 
-ユーザーのプライバシーと利便性を最優先し、同期方法を柔軟に選べます。
+### 1. Future-Proff Your Data
 
-- **GitHub Gist 同期 (実装済み)**:
-  - 開発者に最適。GitHub Gist (Secret) をデータベースとして使用。
-  - 無料で容量制限を気にする必要がありません（画像は自動で最適化してBase64保存）。
-  - APIトークンを入れるだけの簡単セットアップ。
+Edge Collections is a great feature, but relying on a single browser vendor carries risks. Features can be deprecated or changed at any time.
+**Web Collections** ensures your data belongs to you. Even if Edge removes the feature tomorrow, your collections remain safe and accessible in any Chromium browser.
 
-- **ローカルフォルダ/クラウドストレージ同期 (v1.1 実装予定)**:
-  - OneDrive、Google Drive、DropboxなどのPC内同期フォルダを指定するだけ。
-  - ファイルの変更を検知してリアルタイムに同期。
-  - 外部サーバーにトークンを渡す必要がなく、最もセキュアでプライベート。
+### 2. Freedom from Vendor Lock-in
 
-### 3. Edgeからの完全移行
+Why limit your productivity to just Edge? Use your collections in Chrome, Brave, or Vivaldi. This extension provides a unified experience across all your favorite browsers.
 
-専用の移行スクリプト (`scripts/migrate_collections.py`) を提供。現在Edgeに保存されている数百のコレクションや画像を、ワンクリックでJSON化してインポートできます。
+### 3. Unique Hybrid Sync System
 
-## 🚀 機能一覧
+We prioritize privacy and flexibility. You choose how your data lives:
 
-- **Webページの保存**: 現在見ているページをワンクリックで追加
-- **画像の保存**: 画像右クリックで直接コレクションに追加
-- **テキストメモ**: 選択したテキストや、自由記述のメモを追加
-- **ドラッグ&ドロップ**: アイテムの並び替え（実装中）
-- **スマートリサイズ**: 保存した画像は視認性を保ったまま自動軽量化 (WebP/320px)
+- **GitHub Gist Sync (Implemented)**:
+  - Perfect for developers. Uses GitHub Gist (Secret) as your personal database.
+  - Serverless, free, and secure. Images are automatically optimized (WebP/320px) and stored as Base64.
+  - No subscription fees, no storage limits (within Gist/GitHub reasonable use).
 
-## 📦 インストールと設定
+- **Local Folder / Cloud Drive Sync (Planned for v1.1)**:
+  - Sync via your own file system (OneDrive, Google Drive, Dropbox, etc.).
+  - The extension writes to a local JSON file, and your cloud drive app handles the sync.
+  - **Zero data leaves your trusted environment.**
 
-### インストール
+### 4. Powerful Migration Tool
 
-1. このリポジトリをクローンまたはダウンロード
-2. Chromeの `chrome://extensions/` を開く
-3. 「デベロッパーモード」をONにする
-4. 「パッケージ化されていない拡張機能を読み込む」でフォルダを選択
+Includes a Python script (`scripts/migrate_collections.py`) to extract your existing data from Edge.
 
-### Gist同期のセットアップ
+- **Works on Windows, Linux, and macOS**: As long as you can locate the `collectionsSQLite` file path, you can migrate everything.
+- **Image Extraction**: Automatically extracts and optimizes cached images from Edge's internal database.
 
-1. サイドパネルを開き、設定アイコン (⚙️) をクリック
-2. [GitHub Settings](https://github.com/settings/tokens/new?scopes=gist&description=Web%20Collections%20Sync) から `gist` スコープを持つトークンを発行
-3. 設定画面にトークンを貼り付けて「保存」
-4. 「接続テスト」で成功すれば完了！
+## 🚀 Features
 
-## 🗺️ ロードマップ
+- **Save Pages**: One-click to save the current tab.
+- **Save Images**: Right-click on any image to add it directly.
+- **Notes**: Add sticky notes or selected text for context.
+- **Smart Optimization**: Images are resized and compressed to keep sync fast and light.
 
-### v1.0.0 (Current)
+## 📦 Installation & Setup
 
-- [x] 基本的なコレクション機能（追加・削除・編集）
-- [x] サイドパネル UI
-- [x] GitHub Gist 同期の実装
-- [x] 画像最適化ロジック
-- [x] Edgeデータ移行スクリプト (Python)
+### 1. Installation
 
-### v1.1.0 (Next)
+1. Clone or download this repository.
+2. Open `chrome://extensions/` in your browser.
+3. Enable "Developer mode".
+4. Click "Load unpacked" and select the extension directory.
 
-- [ ] **File System Access API によるローカルフォルダ同期**
-  - OneDrive/Google Driveフォルダを直接指定して同期
-- [ ] コンフリクト解決ロジック（最終更新優先マージ）
+### 2. Setting up Gist Sync
 
-### v1.2.0
+1. Open the side panel and click the Settings icon (⚙️).
+2. Generate a GitHub Personal Access Token with `gist` scope [here](https://github.com/settings/tokens/new?scopes=gist&description=Web%20Collections%20Sync).
+3. Paste the token in the settings and click "Save".
+4. Run "Connection Test" & "Sync Now".
 
-- [ ] 全文検索機能
-- [ ] タグ付け機能
-- [ ] オフラインモードの強化
+---
 
-### v2.0.0
+## 🇯🇵 Web Collections (日本語)
 
-- [ ] Android / iOS 対応 (PWAまたはReact Native)
-- [ ] チーム共有機能
+Microsoft Edgeの便利な「コレクション」機能を、Chromeやその他のChromiumブラウザでも使えるようにする拡張機能です。
+特定のブラウザに依存せず、自分のデータを自分で管理するためのツールです。
 
-## 🛠️ 技術スタック
+### 🌟 なぜこの拡張機能が必要なのか？
 
-- **Frontend**: Vanilla JS (No Framework) - 軽量・高速動作のため
-- **Styling**: CSS Variables (Dark mode ready)
-- **Sync**: GitHub REST API / File System Access API
-- **Storage**: chrome.storage.local (unlimitedStorage)
+1. **機能削除リスクへの備え**: ブラウザの機能は突然変更・削除されることがあります。この拡張機能を使えば、Microsoftの都合に左右されず、大切なコレクションを永続的に保持できます。
+2. **ブラウザの自由**: Edge以外のブラウザでもコレクション機能が使えます。
+3. **プライバシー重視の同期**: 企業のサーバーにデータを預けるのではなく、自分のGitHub Gistやローカルフォルダ（OneDrive/GoogleDrive等）を使って同期できます。
 
-## 📄 ドキュメント
+### 🔄 Edgeからの移行（エクスポート）
 
-- [セットアップガイド](docs/SETUP_SYNC.md)
-- [同期機能の設計](docs/sync_feature_planning/implementation_plan.md)
+付属の `scripts/migrate_collections.py` を使えば、現在Edgeにあるコレクションをすべて移行できます。
+
+- WindowsのEdgeデータパス（`collectionsSQLite`）さえわかれば、画像も含めて完全に抽出可能です。
+- **Windowsパスの例**: `C:\Users\<User>\AppData\Local\Microsoft\Edge\User Data\Default\Collections\collectionsSQLite`
+
+### 🗺️ ロードマップ
+
+- **v1.0.0 (Current)**: Gist同期、画像最適化、Edge移行ツール
+- **v1.1.0 (Next)**: ローカルフォルダ同期 (File System Access API) - 自動クラウド同期用
+- **v1.2.0**: 全文検索、タグ付け
 
 ## License
 
