@@ -103,7 +103,7 @@ const CollectionStorage = {
             savedAt: Date.now(),
             sortOrder: collection.items.length
         };
-        collection.items.push(newItem);
+        collection.items.unshift(newItem);
         collection.updatedAt = Date.now();
         await this.saveAllCollections(collections);
         return newItem;
@@ -142,6 +142,31 @@ const CollectionStorage = {
             collection.updatedAt = Date.now();
             await this.saveAllCollections(collections);
         }
+    },
+
+    /**
+     * アイテムを更新
+     * @param {string} collectionId
+     * @param {string} itemId
+     * @param {object} updates - 更新データ
+     */
+    async updateItem(collectionId, itemId, updates) {
+        const collections = await this.getAllCollections();
+        const collection = collections.find(c => c.id === collectionId);
+        if (collection) {
+            const itemIndex = collection.items.findIndex(i => i.id === itemId);
+            if (itemIndex !== -1) {
+                // 既存のアイテムと新規データをマージ
+                collection.items[itemIndex] = {
+                    ...collection.items[itemIndex],
+                    ...updates
+                };
+                collection.updatedAt = Date.now();
+                await this.saveAllCollections(collections);
+                return collection.items[itemIndex];
+            }
+        }
+        throw new Error('Item not found');
     },
 
     /**

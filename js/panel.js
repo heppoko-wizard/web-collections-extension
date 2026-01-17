@@ -10,6 +10,7 @@ const state = {
     collections: [],
     currentCollectionId: null,
     currentView: 'list', // 'list' | 'detail' | 'settings'
+    layoutMode: 'list', // 'list' | 'grid'
     settings: {}
 };
 
@@ -27,6 +28,7 @@ function initElements() {
     elements.collectionTitle = document.getElementById('collection-title');
 
     // Buttons
+    // Buttons
     elements.btnNewCollection = document.getElementById('btn-new-collection');
     elements.btnSettings = document.getElementById('btn-settings');
     elements.btnBack = document.getElementById('btn-back');
@@ -35,6 +37,7 @@ function initElements() {
     elements.btnAddNote = document.getElementById('btn-add-note');
     elements.btnOpenAll = document.getElementById('btn-open-all');
     elements.btnCollectionMenu = document.getElementById('btn-collection-menu');
+    elements.btnLayoutToggle = document.getElementById('btn-layout-toggle');
 
     // Settings
     elements.btnOpenSettings = document.getElementById('btn-open-settings');
@@ -52,6 +55,12 @@ function initElements() {
     elements.btnFolderSyncPull = document.getElementById('btn-folder-sync-pull');
     elements.btnFolderUnlink = document.getElementById('btn-folder-unlink');
     elements.folderSyncStatus = document.getElementById('folder-sync-status');
+
+    // New Settings Inputs
+    elements.settingTileWidth = document.getElementById('setting-tile-width');
+    elements.tileWidthValue = document.getElementById('tile-width-value');
+    elements.settingSaveWidth = document.getElementById('setting-save-width');
+    elements.saveWidthValue = document.getElementById('save-width-value');
 
     // Modals
     elements.modalNote = document.getElementById('modal-note');
@@ -139,6 +148,10 @@ function renderCollectionsList() {
     });
 }
 
+
+
+// ...
+
 function renderItems() {
     const collection = state.collections.find(c => c.id === state.currentCollectionId);
     if (!collection) return;
@@ -146,6 +159,16 @@ function renderItems() {
     elements.collectionTitle.textContent = collection.name;
 
     const container = elements.itemsContainer;
+
+    // Apply layout class
+    container.className = 'items-list'; // Reset
+    container.classList.add(`layout-${state.layoutMode}`);
+
+    // Update toggle button icon
+    if (elements.btnLayoutToggle) {
+        elements.btnLayoutToggle.textContent = state.layoutMode === 'grid' ? '≡' : '田';
+        elements.btnLayoutToggle.title = state.layoutMode === 'grid' ? 'リスト表示にする' : 'タイル表示にする';
+    }
 
     if (!collection.items || collection.items.length === 0) {
         container.innerHTML = `
@@ -160,6 +183,49 @@ function renderItems() {
 
     container.innerHTML = collection.items.map(item => renderItem(item)).join('');
 
+    // Add item menu handlers
+    container.querySelectorAll('.btn-item-menu').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Close all other menus first
+            container.querySelectorAll('.item-menu-dropdown.active').forEach(menu => {
+                if (menu.dataset.id !== btn.dataset.id) {
+                    menu.classList.remove('active');
+                }
+            });
+            // Toggle this menu
+            const dropdown = container.querySelector(`.item-menu-dropdown[data-id="${btn.dataset.id}"]`);
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        });
+    });
+
+    // Close menus when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.item-menu-container')) {
+            container.querySelectorAll('.item-menu-dropdown.active').forEach(menu => {
+                menu.classList.remove('active');
+            });
+        }
+    });
+
+    // Add memo handlers
+    container.querySelectorAll('.btn-add-memo').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            addItemMemo(btn.dataset.id);
+        });
+    });
+
+    // Add rename handlers
+    container.querySelectorAll('.btn-rename-item').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            renameItem(btn.dataset.id);
+        });
+    });
+
     // Add delete handlers
     container.querySelectorAll('.btn-delete-item').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -171,11 +237,11 @@ function renderItems() {
     // Setup drag and drop
     setupDragAndDrop();
 
-    // Add card click handlers (for opening links)
+    // Add card click handlers
     container.querySelectorAll('.item-card').forEach(card => {
         card.addEventListener('click', (e) => {
-            // Do not trigger if clicking a button or a link (to avoid double open)
-            if (e.target.closest('button') || e.target.closest('a')) {
+            // Do not trigger if clicking a button or a link or inside menu
+            if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.item-menu-dropdown')) {
                 return;
             }
 
@@ -191,6 +257,47 @@ function renderItems() {
             }
         });
     });
+}
+
+function toggleLayout() {
+    state.layoutMode = state.layoutMode === 'list' ? 'grid' : 'list';
+    renderItems();
+}
+
+function setupEventListeners() {
+    // Navigation
+    elements.btnNewCollection.addEventListener('click', () => {
+        const title = prompt('コレクション名を入力:');
+        if (title) createCollection(title);
+    });
+
+    elements.btnSettings.addEventListener('click', () => showView('settings'));
+    elements.btnBack.addEventListener('click', () => showView('list'));
+    elements.btnBackSettings.addEventListener('click', () => showView('list'));
+
+    elements.btnOpenSettings.addEventListener('click', () => {
+        if (chrome.runtime.openOptionsPage) {
+            chrome.runtime.openOptionsPage();
+        } else {
+            window.open(chrome.runtime.getURL('options.html'));
+        }
+    });
+
+    elements.btnOpenAll.addEventListener('click', () => {
+        const collection = state.collections.find(c => c.id === state.currentCollectionId);
+        if (collection && collection.items) {
+            collection.items.forEach(item => {
+                const url = item.url || item.sourceUrl;
+                if (url) chrome.tabs.create({ url, active: false });
+            });
+        }
+    });
+
+    elements.btnCollectionMenu.addEventListener('click', showCollectionMenu);
+
+    if (elements.btnLayoutToggle) {
+        elements.btnLayoutToggle.addEventListener('click', toggleLayout);
+    }
 }
 
 function renderItem(item) {
@@ -236,12 +343,24 @@ function renderItem(item) {
             content = `<div class="item-title">${escapeHtml(item.title || 'アイテム')}</div>`;
     }
 
+    // メモ表示
+    const memoContent = item.memo
+        ? `<div class="item-memo">📋 ${escapeHtml(item.memo)}</div>`
+        : '';
+
     return `
     <div class="item-card type-${item.type}" draggable="true" data-id="${item.id}">
       <div class="item-thumb">${thumbContent}</div>
-      <div class="item-content">${content}</div>
+      <div class="item-content">${content}${memoContent}</div>
       <div class="item-actions">
-        <button class="icon-btn btn-delete-item" data-id="${item.id}" title="削除">×</button>
+        <div class="item-menu-container">
+          <button class="icon-btn btn-item-menu" data-id="${item.id}" title="メニュー">⋮</button>
+          <div class="item-menu-dropdown" data-id="${item.id}">
+            <button class="menu-item btn-add-memo" data-id="${item.id}">📋 メモを追加</button>
+            <button class="menu-item btn-rename-item" data-id="${item.id}">✏️ 名前を変更</button>
+            <button class="menu-item btn-delete-item" data-id="${item.id}">🗑️ 削除</button>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -263,7 +382,7 @@ async function createCollection() {
     if (name) {
         const response = await sendMessage({ action: 'createCollection', name });
         if (response.success) {
-            state.collections.push(response.data);
+            state.collections.unshift(response.data);
             renderCollectionsList();
             openCollection(response.data.id);
         }
@@ -327,7 +446,7 @@ async function addCurrentPage() {
     if (response.success) {
         const collection = state.collections.find(c => c.id === state.currentCollectionId);
         if (collection) {
-            collection.items.push(response.data);
+            collection.items.unshift(response.data);
             renderItems();
         }
     }
@@ -352,7 +471,7 @@ async function saveNote() {
     if (response.success) {
         const collection = state.collections.find(c => c.id === state.currentCollectionId);
         if (collection) {
-            collection.items.push(response.data);
+            collection.items.unshift(response.data);
             renderItems();
         }
         hideModal(elements.modalNote);
@@ -372,6 +491,53 @@ async function deleteItem(itemId) {
             collection.items = collection.items.filter(i => i.id !== itemId);
             renderItems();
         }
+    }
+}
+
+async function updateItem(itemId, updates) {
+    const response = await sendMessage({
+        action: 'updateItem',
+        collectionId: state.currentCollectionId,
+        itemId,
+        updates
+    });
+
+    if (response.success) {
+        const collection = state.collections.find(c => c.id === state.currentCollectionId);
+        if (collection) {
+            const index = collection.items.findIndex(i => i.id === itemId);
+            if (index !== -1) {
+                collection.items[index] = response.data;
+                renderItems();
+            }
+        }
+    }
+}
+
+async function addItemMemo(itemId) {
+    const collection = state.collections.find(c => c.id === state.currentCollectionId);
+    const item = collection?.items.find(i => i.id === itemId);
+    if (!item) return;
+
+    const currentMemo = item.memo || '';
+    const memo = prompt('メモを入力:', currentMemo);
+
+    // キャンセル(null)以外の場合、空文字でも更新を行う（メモ削除のため）
+    if (memo !== null) {
+        await updateItem(itemId, { memo });
+    }
+}
+
+async function renameItem(itemId) {
+    const collection = state.collections.find(c => c.id === state.currentCollectionId);
+    const item = collection?.items.find(i => i.id === itemId);
+    if (!item) return;
+
+    const currentTitle = item.title || '';
+    const newTitle = prompt('名前を変更:', currentTitle);
+
+    if (newTitle !== null && newTitle.trim() !== '') {
+        await updateItem(itemId, { title: newTitle.trim() });
     }
 }
 
@@ -398,32 +564,79 @@ async function openAllLinks() {
 // ============================================
 // Drag and Drop
 // ============================================
+// ============================================
+// Drag and Drop with Auto Scroll
+// ============================================
 function setupDragAndDrop() {
-    const container = elements.itemsContainer;
+    const itemsContainer = elements.itemsContainer;
+    const scrollContainer = itemsContainer.closest('.main-content');
     let draggedElement = null;
+    let autoScrollSpeed = 0;
+    let animationFrameId = null;
 
-    container.querySelectorAll('.item-card').forEach(card => {
+    const startAutoScroll = () => {
+        if (autoScrollSpeed !== 0) {
+            scrollContainer.scrollBy(0, autoScrollSpeed);
+            animationFrameId = requestAnimationFrame(startAutoScroll);
+        } else {
+            animationFrameId = null;
+        }
+    };
+
+    const stopAutoScroll = () => {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+        autoScrollSpeed = 0;
+    };
+
+    itemsContainer.querySelectorAll('.item-card').forEach(card => {
         card.addEventListener('dragstart', (e) => {
             draggedElement = card;
             card.classList.add('dragging');
             e.dataTransfer.effectAllowed = 'move';
+            // ドラッグ開始時にスクロール監視は不要だが、変数は初期化
+            stopAutoScroll();
         });
 
         card.addEventListener('dragend', () => {
             card.classList.remove('dragging');
             draggedElement = null;
+            stopAutoScroll();
             saveNewOrder();
         });
 
         card.addEventListener('dragover', (e) => {
             e.preventDefault();
+
+            // Auto Scroll Logic
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const sensitivity = 80; // 端から80pxで反応
+            const maxSpeed = 20;
+
+            if (e.clientY < containerRect.top + sensitivity) {
+                // 上スクロール
+                const intensity = (containerRect.top + sensitivity - e.clientY) / sensitivity;
+                autoScrollSpeed = -maxSpeed * Math.pow(intensity, 2); // 2乗カーブ
+                if (!animationFrameId) startAutoScroll();
+            } else if (e.clientY > containerRect.bottom - sensitivity) {
+                // 下スクロール
+                const intensity = (e.clientY - (containerRect.bottom - sensitivity)) / sensitivity;
+                autoScrollSpeed = maxSpeed * Math.pow(intensity, 2); // 2乗カーブ
+                if (!animationFrameId) startAutoScroll();
+            } else {
+                autoScrollSpeed = 0;
+            }
+
+            // Reordering Logic
             if (draggedElement && draggedElement !== card) {
                 const rect = card.getBoundingClientRect();
                 const midY = rect.top + rect.height / 2;
                 if (e.clientY < midY) {
-                    container.insertBefore(draggedElement, card);
+                    itemsContainer.insertBefore(draggedElement, card);
                 } else {
-                    container.insertBefore(draggedElement, card.nextSibling);
+                    itemsContainer.insertBefore(draggedElement, card.nextSibling);
                 }
             }
         });
@@ -455,6 +668,7 @@ async function loadSettings() {
     const response = await sendMessage({ action: 'getSettings' });
     if (response.success) {
         state.settings = response.data;
+        applyDisplaySettings();
     }
 }
 
@@ -466,6 +680,24 @@ async function updateSettingsUI() {
     } else {
         elements.lastSyncTime.textContent = '';
     }
+
+    if (elements.settingTileWidth) {
+        const tileWidth = state.settings.tileMinWidth || 140;
+        elements.settingTileWidth.value = tileWidth;
+        elements.tileWidthValue.textContent = tileWidth;
+    }
+    if (elements.settingSaveWidth) {
+        const saveWidth = state.settings.imageSaveWidth || 350;
+        elements.settingSaveWidth.value = saveWidth;
+        elements.saveWidthValue.textContent = saveWidth;
+    }
+
+    applyDisplaySettings();
+}
+
+function applyDisplaySettings() {
+    const tileWidth = state.settings.tileMinWidth || 140;
+    document.documentElement.style.setProperty('--tile-min-width', `${tileWidth}px`);
 }
 
 function openSettings() {
@@ -740,6 +972,37 @@ function setupEventListeners() {
     elements.btnOpenSettings.addEventListener('click', openSettings);
     elements.btnSyncNow.addEventListener('click', syncNow);
     elements.btnExportJson.addEventListener('click', exportToJson);
+
+    // Live Preview & Save for Display Settings
+    if (elements.settingTileWidth) {
+        elements.settingTileWidth.addEventListener('input', (e) => {
+            elements.tileWidthValue.textContent = e.target.value;
+            // Live preview
+            document.documentElement.style.setProperty('--tile-min-width', `${e.target.value}px`);
+            // Update state temporarily
+            state.settings.tileMinWidth = parseInt(e.target.value, 10);
+        });
+
+        elements.settingTileWidth.addEventListener('change', async (e) => {
+            // Save on finish
+            const newSettings = { ...state.settings, tileMinWidth: parseInt(e.target.value, 10) };
+            await sendMessage({ action: 'saveSettings', settings: newSettings });
+            state.settings = newSettings;
+        });
+    }
+
+    if (elements.settingSaveWidth) {
+        elements.settingSaveWidth.addEventListener('input', (e) => {
+            elements.saveWidthValue.textContent = e.target.value;
+            state.settings.imageSaveWidth = parseInt(e.target.value, 10);
+        });
+
+        elements.settingSaveWidth.addEventListener('change', async (e) => {
+            const newSettings = { ...state.settings, imageSaveWidth: parseInt(e.target.value, 10) };
+            await sendMessage({ action: 'saveSettings', settings: newSettings });
+            state.settings = newSettings;
+        });
+    }
     elements.btnExportCsv.addEventListener('click', exportToCsv);
     elements.importFile.addEventListener('change', (e) => {
         if (e.target.files[0]) {
@@ -781,12 +1044,23 @@ function setupEventListeners() {
     });
 }
 
+function toggleLayout() {
+    state.layoutMode = state.layoutMode === 'list' ? 'grid' : 'list';
+    renderItems();
+}
+
 // ============================================
 // Initialization
 // ============================================
 async function init() {
     initElements();
     setupEventListeners();
+
+    // Add layout toggle listener manually here or in setupEventListeners
+    if (elements.btnLayoutToggle) {
+        elements.btnLayoutToggle.addEventListener('click', toggleLayout);
+    }
+
     await loadSettings();
     await loadCollections();
     await checkFolderSyncStatus();

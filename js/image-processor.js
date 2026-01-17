@@ -47,20 +47,24 @@ const ImageProcessor = {
                 // 2. Create ImageBitmap
                 const bitmap = await createImageBitmap(blob);
 
-                // 3. Calculate dimensions (Max 320px)
-                const MAX_DIMENSION = 320;
+                // 3. Calculate dimensions
+                // Get settings from storage or use default
+                const settings = await new Promise(resolve => {
+                    chrome.storage.local.get('settings', (result) => {
+                        resolve(result.settings || {});
+                    });
+                });
+
+                const TARGET_WIDTH = settings.imageSaveWidth || 350;
+
                 let width = bitmap.width;
                 let height = bitmap.height;
 
-                if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-                    const ratio = width / height;
-                    if (width > height) {
-                        width = MAX_DIMENSION;
-                        height = Math.round(MAX_DIMENSION / ratio);
-                    } else {
-                        height = MAX_DIMENSION;
-                        width = Math.round(MAX_DIMENSION * ratio);
-                    }
+                // Resize based on width (User preference)
+                if (width > TARGET_WIDTH) {
+                    const ratio = height / width;
+                    width = TARGET_WIDTH;
+                    height = Math.round(TARGET_WIDTH * ratio);
                 }
 
                 // 4. Use OffscreenCanvas to resize

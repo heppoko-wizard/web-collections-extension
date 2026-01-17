@@ -28,10 +28,10 @@ We prioritize privacy and flexibility. You choose how your data lives:
 
 - **GitHub Gist Sync (Implemented)**:
   - Perfect for developers. Uses GitHub Gist (Secret) as your personal database.
-  - Serverless, free, and secure. Images are automatically optimized (WebP/320px) and stored as Base64.
+  - Serverless, free, and secure. Images are automatically optimized (WebP) and stored as Base64.
   - No subscription fees, no storage limits (within Gist/GitHub reasonable use).
 
-- **Local Folder / Cloud Drive Sync (Planned for v1.1)**:
+- **Local Folder / Cloud Drive Sync (Implemented)**:
   - Sync via your own file system (OneDrive, Google Drive, Dropbox, etc.).
   - The extension writes to a local JSON file, and your cloud drive app handles the sync.
   - **Zero data leaves your trusted environment.**
@@ -49,6 +49,14 @@ Includes a Python script (`scripts/migrate_collections.py`) to extract your exis
 - **Save Images**: Right-click on any image to add it directly.
 - **Notes**: Add sticky notes or selected text for context.
 - **Smart Optimization**: Images are resized and compressed to keep sync fast and light.
+- **Drag & Drop Reordering**:
+  - Reorder items naturally with mouse drag.
+  - **Auto-scroll** allows smooth reordering even in long lists.
+- **Item Menu Actions**:
+  - Quick access to **Add Note**, **Rename**, and **Delete** directly from each item.
+- **Customizable UI**:
+  - Toggle between **Grid** and **List** views.
+  - Adjust tile size and image save quality in Settings.
 
 ## 📦 Installation & Setup
 
@@ -90,10 +98,10 @@ Edge Collectionsは素晴らしい機能ですが、単一のブラウザベン�
 
 - **GitHub Gist 同期 (実装済み)**:
   - 開発者に最適です。GitHub Gist (Secret) をあなた個人のデータベースとして利用します。
-  - サーバーレス、無料、そしてセキュアです。画像は自動的に軽量化（WebP/320px）され、Base64形式で保存されます。
+  - サーバーレス、無料、そしてセキュアです。画像は自動的に軽量化（WebP）され、Base64形式で保存されます。
   - サブスクリプション料金も、ストレージ容量制限も（Gistの常識的な範囲内で）ありません。
 
-- **ローカルフォルダ / クラウドドライブ同期 (v1.1 実装予定)**:
+- **ローカルフォルダ / クラウドドライブ同期 (実装済み)**:
   - あなたのPCのファイルシステム経由で同期します（OneDrive, Google Drive, Dropboxなど）。
   - 拡張機能はローカルのJSONファイルを書き込み、クラウド同期は専用アプリに任せる仕組みです。
   - **信頼できる環境からデータが外に出ることは一切ありません。**
@@ -111,6 +119,14 @@ Edgeの既存データを抽出するためのPythonスクリプト（`scripts/m
 - **画像の保存**: 画像を右クリックして、直接コレクションに追加。
 - **メモ機能**: 付箋のようなメモや、選択したテキストをコンテキストとして追加。
 - **スマート最適化**: 同期を高速・軽量に保つため、画像は自動的にリサイズ・圧縮されます。
+- **ドラッグ＆ドロップ並べ替え**:
+  - アイテムをドラッグして直感的に並べ替え可能。
+  - **オートスクロール**機能により、長いリストでもスムーズに移動できます。
+- **アイテムメニュー**:
+  - 各アイテムから直接、**メモを追加**、**名前を変更**、**削除**を実行可能。
+- **カスタマイズ可能なUI**:
+  - **グリッド表示**と**リスト表示**の切り替え。
+  - 設定画面でタイルサイズや画像保存品質を調整可能。
 
 ## 📦 インストールと設定
 

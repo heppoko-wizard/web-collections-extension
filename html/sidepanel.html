@@ -42,6 +42,7 @@
           <button id="btn-back" class="icon-btn">←</button>
           <h2 id="collection-title" class="collection-title" contenteditable="true"></h2>
           <div class="detail-actions">
+            <button id="btn-layout-toggle" class="icon-btn" title="表示切り替え">田</button>
             <button id="btn-open-all" class="icon-btn" title="すべて開く">🔗</button>
             <button id="btn-collection-menu" class="icon-btn" title="メニュー">⋯</button>
           </div>
@@ -68,6 +69,26 @@
           <h2>設定</h2>
         </div>
         <div class="settings-content">
+          <!-- 表示設定 -->
+          <div class="settings-section">
+            <h3>🎨 表示設定</h3>
+            <div class="setting-item">
+              <label>タイル表示の最小幅: <span id="tile-width-value">140</span>px</label>
+              <input type="range" id="setting-tile-width" min="100" max="350" step="10" value="140">
+            </div>
+          </div>
+
+          <!-- 保存設定 -->
+          <div class="settings-section">
+            <h3>💾 保存設定</h3>
+            <div class="setting-item">
+              <label>画像保存サイズ (長辺): <span id="save-width-value">350</span>px</label>
+              <input type="range" id="setting-save-width" min="100" max="2000" step="50" value="350">
+              <div class="setting-desc" style="font-size: 0.85em; color: var(--text-secondary); margin-top: 4px;">
+                このサイズにリサイズされます（縦横比維持）</div>
+            </div>
+          </div>
+
           <!-- 同期設定 -->
           <div class="settings-section">
             <h3>🔄 GitHub Gist 同期</h3>

@@ -14,111 +14,130 @@ chrome.runtime.onInstalled.addListener(() => {
     console.log('Web Collections extension installed');
 });
 
+// ストレージの変更を監視してメニューを更新
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.collections) {
+        setupContextMenus();
+    }
+});
+
 // コンテキストメニューのセットアップ
-function setupContextMenus() {
-    // 既存のメニューを削除
-    chrome.contextMenus.removeAll(() => {
-        // ページを追加
+async function setupContextMenus() {
+    chrome.contextMenus.removeAll(async () => {
+        // 親メニュー
         chrome.contextMenus.create({
-            id: 'add-page',
-            title: 'ページをコレクションに追加',
-            contexts: ['page']
+            id: 'add-to-web-collections',
+            title: 'Web Collectionsに追加',
+            contexts: ['all']
         });
 
-        // 選択テキストを追加
-        chrome.contextMenus.create({
-            id: 'add-selection',
-            title: '「%s」をコレクションに追加',
-            contexts: ['selection']
-        });
+        // コレクションごとのサブメニュー
+        const collections = await CollectionStorage.getAllCollections();
 
-        // 画像を追加
-        chrome.contextMenus.create({
-            id: 'add-image',
-            title: '画像をコレクションに追加',
-            contexts: ['image']
-        });
-
-        // リンクを追加
-        chrome.contextMenus.create({
-            id: 'add-link',
-            title: 'リンクをコレクションに追加',
-            contexts: ['link']
-        });
+        if (collections.length === 0) {
+            // コレクションがない場合は「新しいコレクション」などの案内
+            chrome.contextMenus.create({
+                parentId: 'add-to-web-collections',
+                id: 'create-new-collection-menu',
+                title: '新しいコレクションを作成...',
+                contexts: ['all']
+            });
+        } else {
+            collections.forEach(collection => {
+                chrome.contextMenus.create({
+                    parentId: 'add-to-web-collections',
+                    id: `collection-${collection.id}`,
+                    title: collection.name,
+                    contexts: ['all']
+                });
+            });
+        }
     });
 }
 
 // コンテキストメニュークリック時の処理
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    // コレクションIDの特定
+    let targetCollectionId = null;
+    if (info.menuItemId.startsWith('collection-')) {
+        targetCollectionId = info.menuItemId.replace('collection-', '');
+    } else if (info.menuItemId === 'create-new-collection-menu') {
+        // パネルを開いて新規作成を促す
+        await chrome.sidePanel.open({ tabId: tab.id });
+        return;
+    } else {
+        return; // 知らないメニューID
+    }
+
     let itemData = null;
 
-    switch (info.menuItemId) {
-        case 'add-page':
+    // コンテンツタイプの自動判別
+    if (info.mediaType === 'image') {
+        // 画像として追加
+        itemData = {
+            type: 'image',
+            imageUrl: info.srcUrl,
+            url: info.linkUrl || tab.url,
+            sourceUrl: tab.url,
+            title: tab.title
+        };
+    } else if (info.selectionText) {
+        // テキストとして追加
+        itemData = {
+            type: 'text',
+            content: info.selectionText,
+            sourceUrl: tab.url,
+            sourceTitle: tab.title
+        };
+    } else {
+        // ページ/リンクとして追加
+        if (info.linkUrl) {
+            itemData = {
+                type: 'webpage',
+                url: info.linkUrl,
+                title: info.linkUrl,
+                sourceUrl: tab.url
+            };
+        } else {
             itemData = {
                 type: 'webpage',
                 url: tab.url,
                 title: tab.title,
                 faviconUrl: tab.favIconUrl || ''
             };
-            break;
-
-        case 'add-selection':
-            itemData = {
-                type: 'text',
-                content: info.selectionText,
-                sourceUrl: tab.url,
-                sourceTitle: tab.title
-            };
-            break;
-
-        case 'add-image':
-            // 画像の場合、リンクが埋め込まれていればリンク先を使用
-            itemData = {
-                type: 'image',
-                imageUrl: info.srcUrl,
-                url: info.linkUrl || tab.url,  // リンクがあればそれを、なければ現在のページURL
-                sourceUrl: tab.url,
-                title: tab.title
-            };
-            break;
-
-        case 'add-link':
-            itemData = {
-                type: 'webpage',
-                url: info.linkUrl,
-                title: info.linkUrl,  // リンクテキストは取得できないのでURLを使用
-                sourceUrl: tab.url
-            };
-            break;
+        }
     }
 
     if (itemData) {
-        // サイドパネルを開いてアイテムを追加
-        await handleAddItem(itemData, tab);
+        await handleAddItem(itemData, tab, targetCollectionId);
     }
 });
 
 // アイテム追加ハンドラ
-async function handleAddItem(itemData, tab) {
-    // デフォルトコレクションを取得または作成
-    let collections = await CollectionStorage.getAllCollections();
+async function handleAddItem(itemData, tab, collectionId = null) {
+    let targetId = collectionId;
 
-    if (collections.length === 0) {
-        await CollectionStorage.createCollection('マイコレクション');
-        collections = await CollectionStorage.getAllCollections();
+    // ID指定がない場合（あるいはエラー時）はデフォルト（最初のコレクション）を使用
+    if (!targetId) {
+        let collections = await CollectionStorage.getAllCollections();
+        if (collections.length === 0) {
+            await CollectionStorage.createCollection('マイコレクション');
+            collections = await CollectionStorage.getAllCollections();
+        }
+        targetId = collections[0].id;
     }
 
-    const defaultCollection = collections[0];
-    await CollectionStorage.addItem(defaultCollection.id, itemData);
+    await CollectionStorage.addItem(targetId, itemData);
 
-    // サイドパネルを開く
-    try {
-        await chrome.sidePanel.open({ tabId: tab.id });
-    } catch (e) {
-        console.log('Side panel open failed:', e);
-    }
+    // サイドパネルに通知（もし開いていれば更新させるため）
+    chrome.runtime.sendMessage({
+        action: 'collectionUpdated',
+        collectionId: targetId
+    }).catch(() => {
+        // パネルが閉じていて受信できない場合は無視
+    });
 
-    // 追加通知
+    // 成功バッジ表示
     await chrome.action.setBadgeText({ text: '✓', tabId: tab.id });
     await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
     setTimeout(async () => {
@@ -166,6 +185,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 case 'updateCollection':
                     await CollectionStorage.updateCollection(message.id, message.updates);
                     sendResponse({ success: true });
+                    break;
+
+                case 'updateItem':
+                    const updatedItem = await CollectionStorage.updateItem(message.collectionId, message.itemId, message.updates);
+                    sendResponse({ success: true, data: updatedItem });
                     break;
 
                 case 'exportJson':
