@@ -1,0 +1,27 @@
+{
+  "name": "web-collections-extension",
+  "version": "1.0.0",
+  "description": "A cross-browser extension that replicates Microsoft Edge's \"Collections\" feature, bringing it to Chrome, Brave, Vivaldi, and other Chromium browsers. It features a unique hybrid sync system that gives you full ownership of your data, free from vendor lock-in.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/heppoko-wizard/web-collections-extension.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/heppoko-wizard/web-collections-extension/issues"
+  },
+  "homepage": "https://github.com/heppoko-wizard/web-collections-extension#readme",
+  "devDependencies": {
+    "zenn-cli": "^0.3.1"
+  }
+}
