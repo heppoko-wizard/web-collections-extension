@@ -170,6 +170,27 @@ function renderItems() {
 
     // Setup drag and drop
     setupDragAndDrop();
+
+    // Add card click handlers (for opening links)
+    container.querySelectorAll('.item-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+            // Do not trigger if clicking a button or a link (to avoid double open)
+            if (e.target.closest('button') || e.target.closest('a')) {
+                return;
+            }
+
+            const collection = state.collections.find(c => c.id === state.currentCollectionId);
+            if (!collection) return;
+
+            const item = collection.items.find(i => i.id === card.dataset.id);
+            if (!item) return;
+
+            const url = item.url || item.sourceUrl;
+            if (url) {
+                chrome.tabs.create({ url, active: false });
+            }
+        });
+    });
 }
 
 function renderItem(item) {
@@ -192,7 +213,7 @@ function renderItem(item) {
                 ? `<img src="${escapeHtml(item.imageUrl)}" alt="">`
                 : '<span class="icon">🖼️</span>';
             content = `
-        <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">画像</a></div>
+        <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">${escapeHtml(item.title || '画像')}</a></div>
         <div class="item-domain">${getDomain(item.sourceUrl || item.url)}</div>
       `;
             break;
@@ -216,7 +237,7 @@ function renderItem(item) {
     }
 
     return `
-    <div class="item-card" draggable="true" data-id="${item.id}">
+    <div class="item-card type-${item.type}" draggable="true" data-id="${item.id}">
       <div class="item-thumb">${thumbContent}</div>
       <div class="item-content">${content}</div>
       <div class="item-actions">
