@@ -1,0 +1,20 @@
+{
+    "appName": {
+        "message": "Web Collections (Edge代替)"
+    },
+    "appDesc": {
+        "message": "Edge Collectionsの機能を再現し、Google Driveで暗号化同期を行う拡張機能です。"
+    },
+    "openSidePanel": {
+        "message": "コレクションを開く"
+    },
+    "contextMenuAddPage": {
+        "message": "ページをコレクションに追加"
+    },
+    "contextMenuAddImage": {
+        "message": "画像をコレクションに追加"
+    },
+    "contextMenuAddText": {
+        "message": "選択テキストをコレクションに追加"
+    }
+}

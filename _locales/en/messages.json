@@ -1,0 +1,20 @@
+{
+    "appName": {
+        "message": "Web Collections (Edge Alternative)"
+    },
+    "appDesc": {
+        "message": "A browser extension that replicates Edge Collections with encrypted Google Drive sync."
+    },
+    "openSidePanel": {
+        "message": "Open Collections"
+    },
+    "contextMenuAddPage": {
+        "message": "Add page to collection"
+    },
+    "contextMenuAddImage": {
+        "message": "Add image to collection"
+    },
+    "contextMenuAddText": {
+        "message": "Add selected text to collection"
+    }
+}

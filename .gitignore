@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Extension builds
+dist/
+*.crx
+*.pem
+
+# User data (sensitive)
+collections_migrated.json
+web-collections-data.enc
+*.log
+
+# Editor
+.vscode/
+.idea/
+
+# AI/Agent
+.gemini/

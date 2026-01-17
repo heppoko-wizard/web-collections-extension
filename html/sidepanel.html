@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Collections</title>
+  <link rel="stylesheet" href="../css/panel.css">
+</head>
+
+<body>
+  <div id="app">
+    <!-- ヘッダー -->
+    <header class="header">
+      <h1 class="header-title">
+        <span class="header-icon">📚</span>
+        コレクション
+      </h1>
+      <div class="header-actions">
+        <button id="btn-settings" class="icon-btn" title="設定">⚙️</button>
+      </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <!-- コレクション一覧ビュー -->
+      <section id="view-list" class="view active">
+        <div class="action-bar">
+          <button id="btn-new-collection" class="btn btn-primary">
+            <span class="btn-icon">+</span>
+            新しいコレクション
+          </button>
+        </div>
+        <div id="collections-container" class="collections-list">
+          <!-- コレクションカードがここに挿入される -->
+        </div>
+      </section>
+
+      <!-- コレクション詳細ビュー -->
+      <section id="view-detail" class="view">
+        <div class="detail-header">
+          <button id="btn-back" class="icon-btn">←</button>
+          <h2 id="collection-title" class="collection-title" contenteditable="true"></h2>
+          <div class="detail-actions">
+            <button id="btn-open-all" class="icon-btn" title="すべて開く">🔗</button>
+            <button id="btn-collection-menu" class="icon-btn" title="メニュー">⋯</button>
+          </div>
+        </div>
+        <div class="action-bar">
+          <button id="btn-add-page" class="btn btn-secondary">
+            <span class="btn-icon">📄</span>
+            このページを追加
+          </button>
+          <button id="btn-add-note" class="btn btn-secondary">
+            <span class="btn-icon">📝</span>
+            メモを追加
+          </button>
+        </div>
+        <div id="items-container" class="items-list">
+          <!-- アイテムがここに挿入される -->
+        </div>
+      </section>
+
+      <!-- 設定ビュー -->
+      <section id="view-settings" class="view">
+        <div class="detail-header">
+          <button id="btn-back-settings" class="icon-btn">←</button>
+          <h2>設定</h2>
+        </div>
+        <div class="settings-content">
+          <!-- 同期設定 -->
+          <div class="settings-section">
+            <h3>🔄 GitHub Gist 同期</h3>
+            <div class="setting-item">
+              <p class="hint">コレクションをGitHub Gistで同期できます</p>
+              <button id="btn-open-settings" class="btn btn-secondary">⚙️ トークン設定</button>
+            </div>
+            <div class="setting-item" id="sync-actions">
+              <button id="btn-sync-now" class="btn btn-primary">🔄 今すぐ同期</button>
+              <p id="last-sync-time" class="hint"></p>
+            </div>
+          </div>
+
+          <!-- エクスポート・インポート -->
+          <div class="settings-section">
+            <h3>📦 データ管理</h3>
+            <div class="setting-item">
+              <button id="btn-export-json" class="btn btn-secondary">JSONエクスポート</button>
+              <button id="btn-export-csv" class="btn btn-secondary">CSVエクスポート</button>
+            </div>
+            <div class="setting-item">
+              <label for="import-file" class="btn btn-secondary">JSONインポート</label>
+              <input type="file" id="import-file" accept=".json" style="display: none;">
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- モーダル: メモ入力 -->
+    <div id="modal-note" class="modal">
+      <div class="modal-content">
+        <h3>メモを追加</h3>
+        <textarea id="note-input" placeholder="メモを入力..."></textarea>
+        <div class="modal-actions">
+          <button id="btn-note-cancel" class="btn btn-secondary">キャンセル</button>
+          <button id="btn-note-save" class="btn btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- モーダル: コレクションメニュー -->
+    <div id="modal-collection-menu" class="modal">
+      <div class="modal-content modal-menu">
+        <button id="btn-delete-collection" class="menu-item danger">🗑️ コレクションを削除</button>
+        <button id="btn-export-collection" class="menu-item">📤 このコレクションをエクスポート</button>
+        <button id="btn-menu-cancel" class="menu-item">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/gist-sync.js"></script>
+  <script src="../js/image-optimizer.js"></script>
+  <script src="../js/panel.js"></script>
+</body>
+
+</html>
