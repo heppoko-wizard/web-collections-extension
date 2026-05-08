@@ -9,10 +9,17 @@
 const state = {
     collections: [],
     currentCollectionId: null,
+    currentItems: [],
     currentView: 'list', // 'list' | 'detail' | 'settings'
     layoutMode: 'list', // 'list' | 'grid'
-    settings: {}
+    settings: {},
+    folderSyncEnabled: false
 };
+
+// Virtual Scroll Constants
+const ITEM_HEIGHT_LIST = 100; // px
+const ITEM_HEIGHT_GRID = 220; // px
+const BUFFER_SIZE = 20; // items
 
 // ============================================
 // DOM Elements
@@ -25,6 +32,8 @@ function initElements() {
     elements.viewSettings = document.getElementById('view-settings');
     elements.collectionsContainer = document.getElementById('collections-container');
     elements.itemsContainer = document.getElementById('items-container');
+    elements.itemsList = document.getElementById('items-list');
+    elements.virtualScrollSpacer = document.getElementById('virtual-scroll-spacer');
     elements.collectionTitle = document.getElementById('collection-title');
 
     // Buttons
@@ -123,8 +132,8 @@ function renderCollectionsList() {
     }
 
     container.innerHTML = state.collections.map(collection => {
-        const itemCount = collection.items?.length || 0;
-        const firstImage = collection.items?.find(i => i.type === 'image' || i.imageUrl);
+        const itemCount = collection.itemCount ?? collection.items?.length ?? 0;
+        const firstImage = collection.firstImage;
         const thumbContent = firstImage?.imageUrl
             ? `<img src="${escapeHtml(firstImage.imageUrl)}" alt="">`
             : '📁';
@@ -158,7 +167,9 @@ function renderItems() {
 
     elements.collectionTitle.textContent = collection.name;
 
-    const container = elements.itemsContainer;
+    const items = state.currentItems;
+    const container = elements.itemsList;
+    const scrollContainer = elements.itemsContainer;
 
     // Apply layout class
     container.className = 'items-list'; // Reset
@@ -170,7 +181,8 @@ function renderItems() {
         elements.btnLayoutToggle.title = state.layoutMode === 'grid' ? 'リスト表示にする' : 'タイル表示にする';
     }
 
-    if (!collection.items || collection.items.length === 0) {
+    if (!items || items.length === 0) {
+        elements.virtualScrollSpacer.style.height = '0px';
         container.innerHTML = `
       <div class="empty-state">
         <div class="icon">📄</div>
@@ -181,82 +193,107 @@ function renderItems() {
         return;
     }
 
-    container.innerHTML = collection.items.map(item => renderItem(item)).join('');
+    // Calculate total height
+    const itemHeight = state.layoutMode === 'grid' ? ITEM_HEIGHT_GRID : ITEM_HEIGHT_LIST;
+    const totalHeight = items.length * itemHeight;
+    elements.virtualScrollSpacer.style.height = `${totalHeight}px`;
 
-    // Add item menu handlers
-    container.querySelectorAll('.btn-item-menu').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            // Close all other menus first
-            container.querySelectorAll('.item-menu-dropdown.active').forEach(menu => {
-                if (menu.dataset.id !== btn.dataset.id) {
-                    menu.classList.remove('active');
-                }
-            });
-            // Toggle this menu
-            const dropdown = container.querySelector(`.item-menu-dropdown[data-id="${btn.dataset.id}"]`);
-            if (dropdown) {
-                dropdown.classList.toggle('active');
-            }
+    // Initial render
+    renderVisibleItems();
+
+    // Attach scroll listener if not already attached
+    if (!scrollContainer.dataset.hasScrollListener) {
+        scrollContainer.addEventListener('scroll', () => {
+            renderVisibleItems();
         });
-    });
+        scrollContainer.dataset.hasScrollListener = 'true';
 
-    // Close menus when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.item-menu-container')) {
-            container.querySelectorAll('.item-menu-dropdown.active').forEach(menu => {
-                menu.classList.remove('active');
-            });
-        }
-    });
-
-    // Add memo handlers
-    container.querySelectorAll('.btn-add-memo').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            addItemMemo(btn.dataset.id);
-        });
-    });
-
-    // Add rename handlers
-    container.querySelectorAll('.btn-rename-item').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            renameItem(btn.dataset.id);
-        });
-    });
-
-    // Add delete handlers
-    container.querySelectorAll('.btn-delete-item').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteItem(btn.dataset.id);
-        });
-    });
-
-    // Setup drag and drop
-    setupDragAndDrop();
-
-    // Add card click handlers
-    container.querySelectorAll('.item-card').forEach(card => {
-        card.addEventListener('click', (e) => {
-            // Do not trigger if clicking a button or a link or inside menu
-            if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.item-menu-dropdown')) {
+        // Add event delegation for item actions
+        scrollContainer.addEventListener('click', (e) => {
+            const target = e.target;
+            
+            // 1. Item Menu Toggle
+            const menuBtn = target.closest('.btn-item-menu');
+            if (menuBtn) {
+                e.stopPropagation();
+                const id = menuBtn.dataset.id;
+                // Close others
+                elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => {
+                    if (m.dataset.id !== id) m.classList.remove('active');
+                });
+                // Toggle this
+                const dropdown = elements.itemsList.querySelector(`.item-menu-dropdown[data-id="${id}"]`);
+                if (dropdown) dropdown.classList.toggle('active');
                 return;
             }
 
-            const collection = state.collections.find(c => c.id === state.currentCollectionId);
-            if (!collection) return;
-
-            const item = collection.items.find(i => i.id === card.dataset.id);
-            if (!item) return;
-
-            const url = item.url || item.sourceUrl;
-            if (url) {
-                chrome.tabs.create({ url, active: false });
+            // 2. Add Memo
+            const memoBtn = target.closest('.btn-add-memo');
+            if (memoBtn) {
+                e.stopPropagation();
+                addItemMemo(memoBtn.dataset.id);
+                return;
             }
+
+            // 3. Rename
+            const renameBtn = target.closest('.btn-rename-item');
+            if (renameBtn) {
+                e.stopPropagation();
+                renameItem(renameBtn.dataset.id);
+                return;
+            }
+
+            // 4. Delete
+            const deleteBtn = target.closest('.btn-delete-item');
+            if (deleteBtn) {
+                e.stopPropagation();
+                deleteItem(deleteBtn.dataset.id);
+                return;
+            }
+
+            // 5. Item Card Click (Open Link)
+            const card = target.closest('.item-card');
+            if (card) {
+                // Do not trigger if clicking a button or a link or inside menu
+                if (target.closest('button') || target.closest('a') || target.closest('.item-menu-dropdown')) {
+                    return;
+                }
+                const item = state.currentItems.find(i => i.id === card.dataset.id);
+                if (item) {
+                    const url = item.url || item.sourceUrl;
+                    if (url) chrome.tabs.create({ url, active: false });
+                }
+                return;
+            }
+
+            // Close all menus when clicking elsewhere
+            elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => m.classList.remove('active'));
         });
-    });
+    }
+
+    // Setup drag and drop (Re-run for visible items)
+    setupDragAndDrop();
+}
+
+function renderVisibleItems() {
+    const scrollContainer = elements.itemsContainer;
+    const itemsList = elements.itemsList;
+    const items = state.currentItems;
+    
+    if (!items || items.length === 0) return;
+
+    const itemHeight = state.layoutMode === 'grid' ? ITEM_HEIGHT_GRID : ITEM_HEIGHT_LIST;
+    const scrollTop = scrollContainer.scrollTop;
+    const containerHeight = scrollContainer.clientHeight;
+
+    const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - BUFFER_SIZE);
+    const endIndex = Math.min(items.length - 1, Math.ceil((scrollTop + containerHeight) / itemHeight) + BUFFER_SIZE);
+
+    const visibleItems = items.slice(startIndex, endIndex + 1);
+    const offsetY = startIndex * itemHeight;
+
+    itemsList.style.transform = `translateY(${offsetY}px)`;
+    itemsList.innerHTML = visibleItems.map(item => renderItem(item)).join('');
 }
 
 function toggleLayout() {
@@ -284,13 +321,10 @@ function setupEventListeners() {
     });
 
     elements.btnOpenAll.addEventListener('click', () => {
-        const collection = state.collections.find(c => c.id === state.currentCollectionId);
-        if (collection && collection.items) {
-            collection.items.forEach(item => {
-                const url = item.url || item.sourceUrl;
-                if (url) chrome.tabs.create({ url, active: false });
-            });
-        }
+        state.currentItems.forEach(item => {
+            const url = item.url || item.sourceUrl;
+            if (url) chrome.tabs.create({ url, active: false });
+        });
     });
 
     elements.btnCollectionMenu.addEventListener('click', showCollectionMenu);
@@ -385,13 +419,21 @@ async function createCollection() {
             state.collections.unshift(response.data);
             renderCollectionsList();
             openCollection(response.data.id);
+            autoSyncPush();
         }
     }
 }
 
-function openCollection(id) {
+async function openCollection(id) {
     state.currentCollectionId = id;
     showView('detail');
+    // アイテムを遅延ロード
+    const response = await sendMessage({ action: 'getItemsByCollection', collectionId: id });
+    if (response.success) {
+        state.currentItems = response.data;
+    } else {
+        state.currentItems = [];
+    }
     renderItems();
 }
 
@@ -409,6 +451,7 @@ async function deleteCurrentCollection() {
         showView('list');
         renderCollectionsList();
         hideModal(elements.modalCollectionMenu);
+        autoSyncPush();
     }
 }
 
@@ -422,6 +465,7 @@ async function updateCollectionName() {
         });
         const collection = state.collections.find(c => c.id === state.currentCollectionId);
         if (collection) collection.name = newName;
+        autoSyncPush();
     }
 }
 
@@ -444,11 +488,9 @@ async function addCurrentPage() {
     });
 
     if (response.success) {
-        const collection = state.collections.find(c => c.id === state.currentCollectionId);
-        if (collection) {
-            collection.items.unshift(response.data);
-            renderItems();
-        }
+        state.currentItems.unshift(response.data);
+        renderItems();
+        autoSyncPush();
     }
 }
 
@@ -469,12 +511,10 @@ async function saveNote() {
     });
 
     if (response.success) {
-        const collection = state.collections.find(c => c.id === state.currentCollectionId);
-        if (collection) {
-            collection.items.unshift(response.data);
-            renderItems();
-        }
+        state.currentItems.unshift(response.data);
+        renderItems();
         hideModal(elements.modalNote);
+        autoSyncPush();
     }
 }
 
@@ -486,11 +526,9 @@ async function deleteItem(itemId) {
     });
 
     if (response.success) {
-        const collection = state.collections.find(c => c.id === state.currentCollectionId);
-        if (collection) {
-            collection.items = collection.items.filter(i => i.id !== itemId);
-            renderItems();
-        }
+        state.currentItems = state.currentItems.filter(i => i.id !== itemId);
+        renderItems();
+        autoSyncPush();
     }
 }
 
@@ -503,20 +541,17 @@ async function updateItem(itemId, updates) {
     });
 
     if (response.success) {
-        const collection = state.collections.find(c => c.id === state.currentCollectionId);
-        if (collection) {
-            const index = collection.items.findIndex(i => i.id === itemId);
-            if (index !== -1) {
-                collection.items[index] = response.data;
-                renderItems();
-            }
+        const index = state.currentItems.findIndex(i => i.id === itemId);
+        if (index !== -1) {
+            state.currentItems[index] = response.data;
+            renderItems();
         }
+        autoSyncPush();
     }
 }
 
 async function addItemMemo(itemId) {
-    const collection = state.collections.find(c => c.id === state.currentCollectionId);
-    const item = collection?.items.find(i => i.id === itemId);
+    const item = state.currentItems.find(i => i.id === itemId);
     if (!item) return;
 
     const currentMemo = item.memo || '';
@@ -529,8 +564,7 @@ async function addItemMemo(itemId) {
 }
 
 async function renameItem(itemId) {
-    const collection = state.collections.find(c => c.id === state.currentCollectionId);
-    const item = collection?.items.find(i => i.id === itemId);
+    const item = state.currentItems.find(i => i.id === itemId);
     if (!item) return;
 
     const currentTitle = item.title || '';
@@ -542,10 +576,9 @@ async function renameItem(itemId) {
 }
 
 async function openAllLinks() {
-    const collection = state.collections.find(c => c.id === state.currentCollectionId);
-    if (!collection) return;
+    if (state.currentItems.length === 0) return;
 
-    const urls = collection.items
+    const urls = state.currentItems
         .filter(i => i.url || i.sourceUrl)
         .map(i => i.url || i.sourceUrl);
 
@@ -568,11 +601,12 @@ async function openAllLinks() {
 // Drag and Drop with Auto Scroll
 // ============================================
 function setupDragAndDrop() {
-    const itemsContainer = elements.itemsContainer;
-    const scrollContainer = itemsContainer.closest('.main-content');
+    const scrollContainer = elements.itemsContainer;
     let draggedElement = null;
     let autoScrollSpeed = 0;
     let animationFrameId = null;
+
+    if (scrollContainer.dataset.hasDragListener) return;
 
     const startAutoScroll = () => {
         if (autoScrollSpeed !== 0) {
@@ -591,60 +625,64 @@ function setupDragAndDrop() {
         autoScrollSpeed = 0;
     };
 
-    itemsContainer.querySelectorAll('.item-card').forEach(card => {
-        card.addEventListener('dragstart', (e) => {
+    scrollContainer.addEventListener('dragstart', (e) => {
+        const card = e.target.closest('.item-card');
+        if (card) {
             draggedElement = card;
             card.classList.add('dragging');
             e.dataTransfer.effectAllowed = 'move';
-            // ドラッグ開始時にスクロール監視は不要だが、変数は初期化
             stopAutoScroll();
-        });
+        }
+    });
 
-        card.addEventListener('dragend', () => {
+    scrollContainer.addEventListener('dragend', (e) => {
+        const card = e.target.closest('.item-card');
+        if (card) {
             card.classList.remove('dragging');
             draggedElement = null;
             stopAutoScroll();
             saveNewOrder();
-        });
-
-        card.addEventListener('dragover', (e) => {
-            e.preventDefault();
-
-            // Auto Scroll Logic
-            const containerRect = scrollContainer.getBoundingClientRect();
-            const sensitivity = 80; // 端から80pxで反応
-            const maxSpeed = 20;
-
-            if (e.clientY < containerRect.top + sensitivity) {
-                // 上スクロール
-                const intensity = (containerRect.top + sensitivity - e.clientY) / sensitivity;
-                autoScrollSpeed = -maxSpeed * Math.pow(intensity, 2); // 2乗カーブ
-                if (!animationFrameId) startAutoScroll();
-            } else if (e.clientY > containerRect.bottom - sensitivity) {
-                // 下スクロール
-                const intensity = (e.clientY - (containerRect.bottom - sensitivity)) / sensitivity;
-                autoScrollSpeed = maxSpeed * Math.pow(intensity, 2); // 2乗カーブ
-                if (!animationFrameId) startAutoScroll();
-            } else {
-                autoScrollSpeed = 0;
-            }
-
-            // Reordering Logic
-            if (draggedElement && draggedElement !== card) {
-                const rect = card.getBoundingClientRect();
-                const midY = rect.top + rect.height / 2;
-                if (e.clientY < midY) {
-                    itemsContainer.insertBefore(draggedElement, card);
-                } else {
-                    itemsContainer.insertBefore(draggedElement, card.nextSibling);
-                }
-            }
-        });
+        }
     });
+
+    scrollContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const card = e.target.closest('.item-card');
+
+        // Auto Scroll Logic
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const sensitivity = 80;
+        const maxSpeed = 20;
+
+        if (e.clientY < containerRect.top + sensitivity) {
+            const intensity = (containerRect.top + sensitivity - e.clientY) / sensitivity;
+            autoScrollSpeed = -maxSpeed * Math.pow(intensity, 2);
+            if (!animationFrameId) startAutoScroll();
+        } else if (e.clientY > containerRect.bottom - sensitivity) {
+            const intensity = (e.clientY - (containerRect.bottom - sensitivity)) / sensitivity;
+            autoScrollSpeed = maxSpeed * Math.pow(intensity, 2);
+            if (!animationFrameId) startAutoScroll();
+        } else {
+            autoScrollSpeed = 0;
+        }
+
+        // Reordering Logic
+        if (card && draggedElement && card !== draggedElement) {
+            const rect = card.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY < midY) {
+                elements.itemsList.insertBefore(draggedElement, card);
+            } else {
+                elements.itemsList.insertBefore(draggedElement, card.nextSibling);
+            }
+        }
+    });
+
+    scrollContainer.dataset.hasDragListener = 'true';
 }
 
 async function saveNewOrder() {
-    const itemIds = Array.from(elements.itemsContainer.querySelectorAll('.item-card'))
+    const itemIds = Array.from(elements.itemsList.querySelectorAll('.item-card'))
         .map(card => card.dataset.id);
 
     await sendMessage({
@@ -654,11 +692,9 @@ async function saveNewOrder() {
     });
 
     // Update local state
-    const collection = state.collections.find(c => c.id === state.currentCollectionId);
-    if (collection) {
-        const itemMap = new Map(collection.items.map(i => [i.id, i]));
-        collection.items = itemIds.map(id => itemMap.get(id)).filter(Boolean);
-    }
+    const itemMap = new Map(state.currentItems.map(i => [i.id, i]));
+    state.currentItems = itemIds.map(id => itemMap.get(id)).filter(Boolean);
+    autoSyncPush();
 }
 
 // ============================================
@@ -704,39 +740,8 @@ function openSettings() {
     chrome.tabs.create({ url: chrome.runtime.getURL('html/settings.html') });
 }
 
-async function syncNow() {
-    try {
-        const token = await GistSync.getToken();
-        if (!token) {
-            alert('GitHub トークンが設定されていません。\n設定画面でトークンを入力してください。');
-            openSettings();
-            return;
-        }
-
-        elements.btnSyncNow.disabled = true;
-        elements.btnSyncNow.textContent = '同期中...';
-
-        // Get current collections
-        const collectionsData = { collections: state.collections };
-
-        // Push to Gist
-        await GistSync.pushToGist(collectionsData, (status) => {
-            elements.btnSyncNow.textContent = status;
-        });
-
-        // Save sync time
-        await chrome.storage.local.set({ last_sync_time: Date.now() });
-        await updateSettingsUI();
-
-        alert('同期が完了しました！');
-    } catch (error) {
-        console.error('Sync error:', error);
-        alert('同期エラー: ' + error.message);
-    } finally {
-        elements.btnSyncNow.disabled = false;
-        elements.btnSyncNow.textContent = '🔄 今すぐ同期';
-    }
-}
+// Gist同期は凍結中
+// async function syncNow() { ... }
 
 // ============================================
 // Export & Import
@@ -749,19 +754,20 @@ async function exportToJson() {
 }
 
 function exportToCsv() {
+    // CSVエクスポートは現在表示中のコレクションのアイテムのみ対象
     const rows = [['Collection', 'Type', 'Title', 'URL', 'Content', 'Saved At']];
+    const collection = state.collections.find(c => c.id === state.currentCollectionId);
+    const collectionName = collection?.name || 'Unknown';
 
-    state.collections.forEach(collection => {
-        collection.items?.forEach(item => {
-            rows.push([
-                collection.name,
-                item.type,
-                item.title || '',
-                item.url || item.sourceUrl || '',
-                item.content || '',
-                new Date(item.savedAt).toISOString()
-            ]);
-        });
+    state.currentItems.forEach(item => {
+        rows.push([
+            collectionName,
+            item.type,
+            item.title || '',
+            item.url || item.sourceUrl || '',
+            item.content || '',
+            new Date(item.savedAt).toISOString()
+        ]);
     });
 
     const csv = rows.map(row =>
@@ -788,6 +794,7 @@ async function selectFolder() {
     try {
         const handle = await FolderSync.requestDirectoryAccess();
         if (handle) {
+            state.folderSyncEnabled = true;
             updateFolderSyncUI(true);
             elements.folderSyncStatus.textContent = `選択中: ${handle.name}`;
             elements.folderSyncStatus.className = 'hint success';
@@ -812,25 +819,108 @@ async function updateFolderSyncUI(hasHandle) {
     }
 }
 
-async function pushToFolder() {
+/**
+ * サイレントモードでの自動Push。UIをブロックせずバックグラウンドで実行する。
+ */
+function autoSyncPush() {
+    if (!state.folderSyncEnabled) return;
+    pushToFolder(true).catch(err => console.warn('Auto push failed:', err));
+}
+
+/**
+ * サイレントモードでの自動Pull。UIをブロックせずバックグラウンドで実行する。
+ */
+async function autoSyncPull() {
+    if (!state.folderSyncEnabled) return;
+    try {
+        await pullFromFolder(true);
+    } catch (err) {
+        console.warn('Auto pull failed:', err);
+    }
+}
+
+async function pushToFolder(silent = false) {
     try {
         elements.btnFolderSyncPush.disabled = true;
-        elements.folderSyncStatus.textContent = 'エクスポート中...';
+        if (!silent) elements.folderSyncStatus.textContent = '同期準備中...';
 
-        const collectionsData = {
-            collections: state.collections,
-            exportedAt: Date.now()
-        };
+        const settingsResponse = await sendMessage({ action: 'getSettings' });
+        const lastSyncTime = settingsResponse.data?.lastSyncTime || 0;
 
-        await FolderSync.pushToFolder(collectionsData, (status) => {
-            elements.folderSyncStatus.textContent = status;
+        // 1. 変更されたコレクションを取得
+        const modResponse = await sendMessage({ action: 'getModifiedCollections', since: lastSyncTime });
+        const modified = modResponse.data || [];
+
+        if (modified.length === 0) {
+            if (!silent) {
+                elements.folderSyncStatus.textContent = '変更はありません';
+                setTimeout(() => { elements.folderSyncStatus.textContent = ''; }, 2000);
+            }
+            return;
+        }
+
+        // 2. 変更があったコレクションを個別に保存
+        for (let i = 0; i < modified.length; i++) {
+            const colMeta = modified[i];
+            if (!silent) elements.folderSyncStatus.textContent = `エクスポート中 (${i + 1}/${modified.length}): ${colMeta.name}`;
+            
+            const exportRes = await sendMessage({ action: 'exportCollection', id: colMeta.id });
+            if (exportRes.success) {
+                const encrypted = await CryptoUtils.encrypt(JSON.stringify(exportRes.data));
+                await FolderSync.writeFile(`collection_${colMeta.id}.json`, encrypted);
+            }
+        }
+
+        // 3. マニフェスト（全コレクションのメタデータ）を更新
+        if (!silent) elements.folderSyncStatus.textContent = 'マニフェスト更新中...';
+
+        // 3-1. クラウド側のマニフェストを取得してマージ
+        let cloudManifest = [];
+        try {
+            const encryptedManifest = await FolderSync.readFile('manifest.json');
+            const manifestJson = await CryptoUtils.decrypt(encryptedManifest);
+            cloudManifest = JSON.parse(manifestJson);
+        } catch (e) {
+            console.warn('Failed to load cloud manifest for merging. Creating new.', e);
+        }
+
+        const allColsRes = await sendMessage({ action: 'getAllCollections', includeDeleted: true });
+        const localCollections = allColsRes.data;
+
+        const mergedMap = new Map();
+        // クラウド側を登録
+        cloudManifest.forEach(c => mergedMap.set(c.id, c));
+        // ローカル側で上書き・追加
+        localCollections.forEach(l => {
+            const existing = mergedMap.get(l.id);
+            if (!existing || (l.updatedAt || 0) >= (existing.updatedAt || 0)) {
+                mergedMap.set(l.id, {
+                    id: l.id,
+                    name: l.name,
+                    updatedAt: l.updatedAt,
+                    itemCount: l.itemCount,
+                    isDeleted: l.isDeleted || false
+                });
+            }
         });
 
-        elements.folderSyncStatus.textContent = '✅ エクスポート成功';
-        elements.folderSyncStatus.className = 'hint success';
-        setTimeout(() => {
-            elements.folderSyncStatus.textContent = '';
-        }, 3000);
+        const mergedManifest = Array.from(mergedMap.values());
+        const encryptedManifest = await CryptoUtils.encrypt(JSON.stringify(mergedManifest));
+        await FolderSync.writeFile('manifest.json', encryptedManifest);
+
+        // 4. 同期時刻を保存
+        const now = Date.now();
+        await sendMessage({ action: 'saveLastSyncTime', time: now });
+
+        if (!silent) {
+            elements.folderSyncStatus.textContent = `✅ 同期完了 (${modified.length}件更新)`;
+            elements.folderSyncStatus.className = 'hint success';
+            setTimeout(() => {
+                elements.folderSyncStatus.textContent = '';
+            }, 3000);
+        } else {
+            console.log(`Auto sync push completed: ${modified.length} collections updated`);
+        }
 
     } catch (error) {
         console.error('Push failed:', error);
@@ -841,41 +931,90 @@ async function pushToFolder() {
     }
 }
 
-async function pullFromFolder() {
-    if (!confirm('現在のデータを上書きしてフォルダからインポートしますか？')) return;
+async function pullFromFolder(silent = false) {
+    if (!silent && !confirm('フォルダから最新データを同期しますか？')) return;
 
     try {
-        elements.btnFolderSyncPull.disabled = true;
-        elements.folderSyncStatus.textContent = 'インポート中...';
+        if (!silent) {
+            elements.btnFolderSyncPull.disabled = true;
+            elements.folderSyncStatus.textContent = 'マニフェスト取得中...';
+        }
 
-        const data = await FolderSync.pullFromFolder((status) => {
-            elements.folderSyncStatus.textContent = status;
+        // 1. manifest.json 読み込み
+        let cloudManifest;
+        try {
+            const encryptedManifest = await FolderSync.readFile('manifest.json');
+            const manifestJson = await CryptoUtils.decrypt(encryptedManifest);
+            cloudManifest = JSON.parse(manifestJson);
+        } catch (e) {
+            console.warn('Failed to load manifest.json:', e);
+            if (silent) return; // サイレントモードではまだ同期データが無い場合は静かに終了
+            throw new Error('同期データが見つかりません (manifest.json)');
+        }
+
+        // 2. ローカルの状態と比較
+        const allColsRes = await sendMessage({ action: 'getAllCollections', includeDeleted: true });
+        const localCollections = allColsRes.data;
+
+        const toUpdate = cloudManifest.filter(cloudCol => {
+            const localCol = localCollections.find(l => l.id === cloudCol.id);
+            return !localCol || (cloudCol.updatedAt || 0) > (localCol.updatedAt || 0);
         });
 
-        if (data && data.collections) {
-            const response = await sendMessage({
-                action: 'importJson',
-                data: JSON.stringify(data) // importJson expects string
-            });
-
-            if (response.success) {
-                await loadCollections();
-                elements.folderSyncStatus.textContent = '✅ インポート成功';
-                elements.folderSyncStatus.className = 'hint success';
-                setTimeout(() => {
-                    elements.folderSyncStatus.textContent = '';
-                }, 3000);
+        if (toUpdate.length === 0) {
+            if (!silent) {
+                elements.folderSyncStatus.textContent = 'データは最新です';
+                setTimeout(() => { elements.folderSyncStatus.textContent = ''; }, 2000);
             }
+            return;
+        }
+
+        // 3. 必要なコレクションのみインポート
+        for (let i = 0; i < toUpdate.length; i++) {
+            const colMeta = toUpdate[i];
+            if (!silent) elements.folderSyncStatus.textContent = `同期中 (${i + 1}/${toUpdate.length}): ${colMeta.name}`;
+
+            try {
+                if (colMeta.isDeleted) {
+                    await sendMessage({ action: 'deleteCollection', id: colMeta.id });
+                    continue;
+                }
+
+                const encrypted = await FolderSync.readFile(`collection_${colMeta.id}.json`);
+                const decrypted = await CryptoUtils.decrypt(encrypted);
+                const colData = JSON.parse(decrypted);
+
+                await sendMessage({ action: 'importCollection', data: colData });
+            } catch (err) {
+                console.error(`Failed to sync collection ${colMeta.id}:`, err);
+            }
+        }
+
+        // 4. 同期時刻を更新
+        await sendMessage({ action: 'saveLastSyncTime', time: Date.now() });
+
+        // UI更新
+        await loadCollections();
+        if (state.currentCollectionId) {
+            await openCollection(state.currentCollectionId);
+        }
+
+        if (!silent) {
+            elements.folderSyncStatus.textContent = `✅ 同期完了 (${toUpdate.length}件更新)`;
+            elements.folderSyncStatus.className = 'hint success';
+            setTimeout(() => { elements.folderSyncStatus.textContent = ''; }, 3000);
         } else {
-            throw new Error('無効なデータ形式です');
+            console.log(`Auto sync pull completed: ${toUpdate.length} collections updated`);
         }
 
     } catch (error) {
         console.error('Pull failed:', error);
-        elements.folderSyncStatus.textContent = `エラー: ${error.message}`;
-        elements.folderSyncStatus.className = 'hint error';
+        if (!silent) {
+            elements.folderSyncStatus.textContent = `エラー: ${error.message}`;
+            elements.folderSyncStatus.className = 'hint error';
+        }
     } finally {
-        elements.btnFolderSyncPull.disabled = false;
+        if (!silent) elements.btnFolderSyncPull.disabled = false;
     }
 }
 
@@ -883,14 +1022,18 @@ async function unlinkFolder() {
     if (!confirm('このフォルダとの連携を解除しますか？\n(実際のファイルは削除されません)')) return;
 
     await FolderSync.clearSavedHandle();
+    state.folderSyncEnabled = false;
     updateFolderSyncUI(false);
 }
 
 async function checkFolderSyncStatus() {
     const handle = await FolderSync.getSavedDirectoryHandle();
     if (handle) {
+        state.folderSyncEnabled = true;
         updateFolderSyncUI(true);
         elements.folderSyncStatus.textContent = `選択中: ${handle.name}`;
+    } else {
+        state.folderSyncEnabled = false;
     }
 }
 
@@ -970,7 +1113,7 @@ function setupEventListeners() {
 
     // Settings
     elements.btnOpenSettings.addEventListener('click', openSettings);
-    elements.btnSyncNow.addEventListener('click', syncNow);
+    // elements.btnSyncNow.addEventListener('click', syncNow); // Gist同期凍結中
     elements.btnExportJson.addEventListener('click', exportToJson);
 
     // Live Preview & Save for Display Settings
@@ -1031,14 +1174,13 @@ function setupEventListeners() {
         }
     });
 
-    // Listen for storage changes (for real-time sync)
-    chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.collections) {
-            state.collections = changes.collections.newValue || [];
-            if (state.currentView === 'list') {
-                renderCollectionsList();
-            } else if (state.currentView === 'detail') {
-                renderItems();
+    // Listen for background updates (replaces chrome.storage.onChanged)
+    chrome.runtime.onMessage.addListener((message) => {
+        if (message.action === 'collectionUpdated') {
+            // Reload data when background notifies of changes
+            loadCollections();
+            if (state.currentView === 'detail' && state.currentCollectionId === message.collectionId) {
+                openCollection(state.currentCollectionId);
             }
         }
     });
@@ -1065,6 +1207,9 @@ async function init() {
     await loadCollections();
     await checkFolderSyncStatus();
     showView('list');
+
+    // フォルダが設定済みなら起動時に自動Pull
+    autoSyncPull();
 }
 
 document.addEventListener('DOMContentLoaded', init);

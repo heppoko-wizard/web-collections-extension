@@ -1,24 +1,37 @@
 /**
  * background.js - Service Worker (バックグラウンド処理)
- * コンテキストメニュー、メッセージハンドリング、同期トリガーを管理
+ * コンテキストメニュー、メッセージハンドリング、マイグレーションを管理
  */
 
 // ライブラリをインポート
-// Service Worker からのインポートは、Service Worker ファイル自身の場所からの相対パス
-// background.js は js/ 内にあるので、同じディレクトリのファイルは ./ で参照
-importScripts('./crypto-utils.js', './drive-sync.js', './storage.js', './image-processor.js');
+importScripts('./crypto-utils.js', './storage.js', './image-processor.js');
 
-// 拡張機能インストール時の初期化
-chrome.runtime.onInstalled.addListener(() => {
+// 拡張機能インストール・更新時の初期化
+chrome.runtime.onInstalled.addListener(async () => {
+    // chrome.storage.local からの自動マイグレーション
+    try {
+        const migrated = await CollectionStorage.migrateFromChromeStorage();
+        if (migrated) {
+            console.log('Data migrated from chrome.storage.local to IndexedDB.');
+        }
+    } catch (error) {
+        console.error('Migration failed:', error);
+    }
+
+    // 設定のマイグレーション
+    try {
+        const settingsResult = await chrome.storage.local.get('settings');
+        if (settingsResult.settings) {
+            await CollectionStorage.saveSettings(settingsResult.settings);
+            await chrome.storage.local.remove('settings');
+            console.log('Settings migrated to IndexedDB.');
+        }
+    } catch (error) {
+        console.error('Settings migration failed:', error);
+    }
+
     setupContextMenus();
     console.log('Web Collections extension installed');
-});
-
-// ストレージの変更を監視してメニューを更新
-chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.collections) {
-        setupContextMenus();
-    }
 });
 
 // コンテキストメニューのセットアップ
@@ -156,15 +169,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
             switch (message.action) {
                 case 'getCollections':
-                    sendResponse({ success: true, data: await CollectionStorage.getAllCollections() });
+                    sendResponse({ success: true, data: await CollectionStorage.getAllCollections(message.includeDeleted) });
                     break;
 
                 case 'createCollection':
-                    sendResponse({ success: true, data: await CollectionStorage.createCollection(message.name) });
+                    const newCol = await CollectionStorage.createCollection(message.name);
+                    setupContextMenus(); // メニュー更新
+                    sendResponse({ success: true, data: newCol });
                     break;
 
                 case 'deleteCollection':
                     await CollectionStorage.deleteCollection(message.id);
+                    setupContextMenus(); // メニュー更新
                     sendResponse({ success: true });
                     break;
 
@@ -192,6 +208,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ success: true, data: updatedItem });
                     break;
 
+                case 'getItemsByCollection':
+                    sendResponse({ success: true, data: await CollectionStorage.getItemsByCollection(message.collectionId) });
+                    break;
+
                 case 'exportJson':
                     sendResponse({ success: true, data: await CollectionStorage.exportToJson() });
                     break;
@@ -201,18 +221,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ success: true });
                     break;
 
-                case 'syncUpload':
-                    await performSync('upload');
-                    sendResponse({ success: true });
+                case 'importCollection':
+                    const data = message.data;
+                    const db = await CollectionStorage.openDB();
+                    const tx = db.transaction(['collections', 'items'], 'readwrite');
+                    const collectionStore = tx.objectStore('collections');
+                    const itemStore = tx.objectStore('items');
+
+                    // コレクションメタデータ保存
+                    const colMeta = {
+                        id: data.id,
+                        name: data.name,
+                        createdAt: data.createdAt,
+                        updatedAt: data.updatedAt
+                    };
+                    await collectionStore.put(colMeta);
+
+                    // アイテム保存（既存を削除してから追加）
+                    const index = itemStore.index('collectionId');
+                    const cursorReq = index.openCursor(IDBKeyRange.only(data.id));
+                    cursorReq.onsuccess = (e) => {
+                        const cursor = e.target.result;
+                        if (cursor) {
+                            cursor.delete();
+                            cursor.continue();
+                        }
+                    };
+
+                    data.items.forEach(item => {
+                        itemStore.put({ ...item, collectionId: data.id });
+                    });
+
+                    tx.oncomplete = () => sendResponse({ success: true });
+                    tx.onerror = () => sendResponse({ success: false, error: tx.error.message });
                     break;
 
-                case 'syncDownload':
-                    await performSync('download');
-                    sendResponse({ success: true });
+                case 'getModifiedCollections':
+                    sendResponse({ success: true, data: await CollectionStorage.getModifiedCollections(message.since) });
                     break;
 
-                case 'getSettings':
-                    sendResponse({ success: true, data: await CollectionStorage.getSettings() });
+                case 'exportCollection':
+                    sendResponse({ success: true, data: await CollectionStorage.exportCollection(message.id) });
+                    break;
+
+                case 'saveLastSyncTime':
+                    const settings = await CollectionStorage.getSettings();
+                    settings.lastSyncTime = message.time;
+                    await CollectionStorage.saveSettings(settings);
+                    sendResponse({ success: true });
                     break;
 
                 case 'saveSettings':
@@ -229,36 +285,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true; // 非同期レスポンスを示す
 });
-
-// 同期処理
-async function performSync(direction) {
-    const settings = await CollectionStorage.getSettings();
-    if (!settings.syncEnabled || !settings.syncPassword) {
-        throw new Error('同期が設定されていません');
-    }
-
-    const token = await DriveSync.authenticate();
-
-    if (direction === 'upload') {
-        const jsonData = await CollectionStorage.exportToJson();
-        const encrypted = await CryptoUtils.encrypt(jsonData, settings.syncPassword);
-        await DriveSync.upload(token, encrypted);
-        settings.lastSyncTime = Date.now();
-        await CollectionStorage.saveSettings(settings);
-    } else {
-        const encryptedData = await DriveSync.download(token);
-        if (encryptedData) {
-            const jsonData = await CryptoUtils.decrypt(
-                encryptedData.encrypted,
-                encryptedData.salt,
-                encryptedData.iv,
-                settings.syncPassword
-            );
-            await CollectionStorage.importFromJson(jsonData);
-            settings.lastSyncTime = Date.now();
-            await CollectionStorage.saveSettings(settings);
-        }
-    }
-}
 
 console.log('Web Collections background script loaded');

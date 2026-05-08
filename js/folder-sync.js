@@ -111,64 +111,79 @@ const FolderSync = {
     },
 
     /**
-     * Push data to folder
+     * ファイルを書き込む（汎用）
      */
-    async pushToFolder(collectionsData, onProgress) {
-        if (onProgress) onProgress('Checking folder access...');
-
+    async writeFile(filename, content) {
         const dirHandle = await this.getSavedDirectoryHandle();
-        if (!dirHandle) {
-            throw new Error('No folder selected');
-        }
-
+        if (!dirHandle) throw new Error('No folder selected');
+        
         const hasPermission = await this.verifyPermission(dirHandle, true);
-        if (!hasPermission) {
-            throw new Error('Permission denied');
-        }
+        if (!hasPermission) throw new Error('Permission denied');
 
-        if (onProgress) onProgress('Writing file...');
-
-        const fileHandle = await dirHandle.getFileHandle(this.FILENAME, { create: true });
+        const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
         const writable = await fileHandle.createWritable();
-
-        await writable.write(JSON.stringify(collectionsData, null, 2));
+        await writable.write(content);
         await writable.close();
+    },
 
+    /**
+     * ファイルを読み込む（汎用）
+     */
+    async readFile(filename) {
+        const dirHandle = await this.getSavedDirectoryHandle();
+        if (!dirHandle) throw new Error('No folder selected');
+
+        const hasPermission = await this.verifyPermission(dirHandle, false);
+        if (!hasPermission) throw new Error('Permission denied');
+
+        const fileHandle = await dirHandle.getFileHandle(filename);
+        const file = await fileHandle.getFile();
+        return await file.text();
+    },
+
+    /**
+     * Push data to folder (Legacy support for single file)
+     */
+    async pushToFolder(data, onProgress) {
+        if (onProgress) onProgress('Writing file...');
+        await this.writeFile(this.FILENAME, data);
         if (onProgress) onProgress('Export complete!');
     },
 
     /**
-     * Pull data from folder
+     * Pull data from folder (Legacy support for single file)
      */
     async pullFromFolder(onProgress) {
-        if (onProgress) onProgress('Checking folder access...');
-
-        const dirHandle = await this.getSavedDirectoryHandle();
-        if (!dirHandle) {
-            throw new Error('No folder selected');
-        }
-
-        const hasPermission = await this.verifyPermission(dirHandle, false);
-        if (!hasPermission) {
-            throw new Error('Permission denied');
-        }
-
         if (onProgress) onProgress('Reading file...');
-
         try {
-            const fileHandle = await dirHandle.getFileHandle(this.FILENAME);
-            const file = await fileHandle.getFile();
-            const text = await file.text();
-
+            const text = await this.readFile(this.FILENAME);
             if (onProgress) onProgress('Import complete!');
-
             return JSON.parse(text);
         } catch (error) {
             if (error.name === 'NotFoundError') {
-                throw new Error('collections.json not found in selected folder');
+                throw new Error('collections.json not found');
             }
             throw error;
         }
+    },
+
+    /**
+     * ディレクトリ内のファイル一覧を取得
+     */
+    async listFiles() {
+        const dirHandle = await this.getSavedDirectoryHandle();
+        if (!dirHandle) throw new Error('No folder selected');
+        
+        const hasPermission = await this.verifyPermission(dirHandle, false);
+        if (!hasPermission) throw new Error('Permission denied');
+
+        const files = [];
+        for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+                files.push(entry.name);
+            }
+        }
+        return files;
     }
 };
 
