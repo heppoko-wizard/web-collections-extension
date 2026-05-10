@@ -21,10 +21,12 @@ async function init() {
 
     // 3. イベントリスナーの設定
     initEvents({
+        toggleTheme: Actions.toggleTheme,
         showCreateCollectionModal: Actions.showCreateCollectionModal,
         saveNewCollection: Actions.saveNewCollection,
         renderCollectionsList: Actions.loadCollections, // Reload collections
         addCurrentPage: Actions.addCurrentPage,
+        addAllTabs: Actions.addAllTabs,
         addNote: Actions.addNote,
         openAllLinks: Actions.openAllLinks,
         updateCollectionName: Actions.updateCollectionName,
@@ -39,11 +41,12 @@ async function init() {
         exportToCsv: Actions.exportToCsv,
         importFromJson: Actions.importFromJson,
         selectFolder: Actions.selectFolder,
+        syncAll: Actions.syncAll,
         pushToFolder: Actions.pushToFolder,
         pullFromFolder: Actions.pullFromFolder,
         unlinkFolder: Actions.unlinkFolder,
         grantFolderPermission: Actions.grantFolderPermission,
-        saveDeviceName: Actions.saveDeviceName,
+        saveSyncMode: Actions.saveSyncMode,
         toggleLayout: Actions.toggleLayout,
         addItemMemo: Actions.addItemMemo,
         renameItem: Actions.renameItem,

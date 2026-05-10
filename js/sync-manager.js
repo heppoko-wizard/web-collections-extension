@@ -7,15 +7,24 @@
 
 import { mergeItem } from './sync-strategy.js';
 import { FolderSync } from './folder-sync.js';
+import { BookmarkSync } from './bookmark-sync.js';
 import { DeviceManager } from './device-manager.js';
 
 export const SyncManager = {
     LAST_CHECKED_KEY: 'sync_last_checked_stamps',
 
     /**
-     * ローカルフォルダへのマルチライター形式でのプッシュ
+     * 設定に応じたバックエンドへのプッシュ
      */
     async pushToLocalFolder(storage) {
+        const settings = await storage.getSettings();
+        const mode = settings.syncMode || 'folder';
+
+        if (mode === 'bookmark') {
+            return await BookmarkSync.push(storage);
+        }
+
+        // 既存のフォルダ同期ロジック
         console.log('SyncManager: Starting multi-writer push...');
         
         try {
@@ -66,10 +75,16 @@ export const SyncManager = {
     },
 
     /**
-     * 効率的なプル＆マージ
-     * OSタイムスタンプ -> マニフェスト内容 -> 個別ファイルの順でフィルタリング
+     * 設定に応じたバックエンドからのプル＆マージ
      */
     async pullFromLocalFolder(storage) {
+        const settings = await storage.getSettings();
+        const mode = settings.syncMode || 'folder';
+
+        if (mode === 'bookmark') {
+            return await BookmarkSync.pull(storage);
+        }
+
         console.log('SyncManager: Starting efficient multi-writer pull...');
 
         try {

@@ -24,7 +24,9 @@
     "identity",
     "activeTab",
     "scripting",
-    "alarms"
+    "notifications",
+    "alarms",
+    "bookmarks"
   ],
   "host_permissions": [
     "https://www.googleapis.com/*",

@@ -32,8 +32,22 @@ chrome.runtime.onInstalled.addListener(async () => {
 
     setupContextMenus();
     setupAlarms();
+    setupBookmarkListeners();
     console.log('Web Collections extension installed');
 });
+
+// ブックマークイベントの監視
+function setupBookmarkListeners() {
+    const triggerSync = () => {
+        handleMessage({ action: 'autoSyncPull' })
+            .catch(err => console.warn('Bookmark Watcher: Sync failed', err));
+    };
+
+    chrome.bookmarks.onCreated.addListener(triggerSync);
+    chrome.bookmarks.onChanged.addListener(triggerSync);
+    chrome.bookmarks.onMoved.addListener(triggerSync);
+    chrome.bookmarks.onRemoved.addListener(triggerSync);
+}
 
 // 定期実行アラームのセットアップ
 function setupAlarms() {

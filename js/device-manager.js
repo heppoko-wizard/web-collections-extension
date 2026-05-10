@@ -8,6 +8,24 @@ export const DeviceManager = {
     STORAGE_KEY: 'sync_device_info',
 
     /**
+     * プラットフォーム情報からデバイス名を自動生成
+     */
+    async getDefaultDeviceName() {
+        return new Promise((resolve) => {
+            chrome.runtime.getPlatformInfo((info) => {
+                const os = info.os.charAt(0).toUpperCase() + info.os.slice(1);
+                const ua = navigator.userAgent;
+                let browser = 'Browser';
+                if (ua.includes('Edg/')) browser = 'Edge';
+                else if (ua.includes('Chrome/')) browser = 'Chrome';
+                else if (ua.includes('Brave/')) browser = 'Brave';
+                
+                resolve(`${os} ${browser}`);
+            });
+        });
+    },
+
+    /**
      * 現在のデバイス情報を取得（存在しなければ新規生成）
      */
     async getDeviceInfo() {
@@ -17,24 +35,14 @@ export const DeviceManager = {
         }
 
         // 新規デバイス情報の初期化
+        const deviceName = await this.getDefaultDeviceName();
         const newInfo = {
             deviceId: generateUUID(),
-            deviceName: this.getDefaultDeviceName(),
+            deviceName: deviceName,
             createdAt: Date.now()
         };
         await chrome.storage.local.set({ [this.STORAGE_KEY]: newInfo });
         return newInfo;
-    },
-
-    /**
-     * UAからデフォルトのデバイス名を推測
-     */
-    getDefaultDeviceName() {
-        const ua = navigator.userAgent;
-        if (ua.includes('Edg/')) return 'Edge Browser';
-        if (ua.includes('Chrome/')) return 'Chrome Browser';
-        if (ua.includes('Brave/')) return 'Brave Browser';
-        return 'Web Device';
     },
 
     /**

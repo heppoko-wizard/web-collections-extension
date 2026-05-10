@@ -13,6 +13,8 @@ import { elements, showView, showModal, hideModal } from './panel-ui.js';
  */
 export function initEvents(handlers) {
     // Navigation
+    elements.btnThemeToggle.addEventListener('click', handlers.toggleTheme);
+    elements.btnSyncAll.addEventListener('click', handlers.syncAll);
     elements.btnNewCollection.addEventListener('click', handlers.showCreateCollectionModal);
     elements.btnSettings.addEventListener('click', () => showView('settings'));
     elements.btnBack.addEventListener('click', () => {
@@ -23,6 +25,7 @@ export function initEvents(handlers) {
 
     // Collection detail
     elements.btnAddPage.addEventListener('click', handlers.addCurrentPage);
+    elements.btnAddAllTabs.addEventListener('click', handlers.addAllTabs);
     elements.btnAddNote.addEventListener('click', handlers.addNote);
     elements.btnOpenAll.addEventListener('click', handlers.openAllLinks);
     elements.btnCollectionMenu.addEventListener('click', () => showModal(elements.modalCollectionMenu));
@@ -84,13 +87,14 @@ export function initEvents(handlers) {
     }
 
     // Folder Sync
-    if (elements.btnSaveDeviceName) {
-        elements.btnSaveDeviceName.addEventListener('click', handlers.saveDeviceName);
-    }
     elements.btnSelectFolder.addEventListener('click', handlers.selectFolder);
     elements.btnFolderSyncPush.addEventListener('click', () => handlers.pushToFolder());
     elements.btnFolderSyncPull.addEventListener('click', () => handlers.pullFromFolder());
     elements.btnFolderUnlink.addEventListener('click', handlers.unlinkFolder);
+
+    if (elements.settingSyncMode) {
+        elements.settingSyncMode.addEventListener('change', handlers.saveSyncMode);
+    }
 
     // Close modals on backdrop click
     [elements.modalNote, elements.modalCollectionMenu, elements.modalCreateCollection].forEach(modal => {

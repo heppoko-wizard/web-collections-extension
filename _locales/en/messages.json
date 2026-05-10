@@ -1,6 +1,6 @@
 {
     "appName": {
-        "message": "Web Collections (Edge Alternative)"
+        "message": "Web Collections"
     },
     "appDesc": {
         "message": "A browser extension that replicates Edge Collections with encrypted Google Drive sync."

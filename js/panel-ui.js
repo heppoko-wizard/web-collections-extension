@@ -22,11 +22,16 @@ export function initElements() {
     elements.collectionTitle = document.getElementById('collection-title');
 
     // Buttons
+    elements.btnThemeToggle = document.getElementById('btn-theme-toggle');
+    elements.btnSyncAll = document.getElementById('btn-sync-all');
+    elements.iconSun = document.getElementById('icon-sun');
+    elements.iconMoon = document.getElementById('icon-moon');
     elements.btnNewCollection = document.getElementById('btn-new-collection');
     elements.btnSettings = document.getElementById('btn-settings');
     elements.btnBack = document.getElementById('btn-back');
     elements.btnBackSettings = document.getElementById('btn-back-settings');
     elements.btnAddPage = document.getElementById('btn-add-page');
+    elements.btnAddAllTabs = document.getElementById('btn-add-all-tabs');
     elements.btnAddNote = document.getElementById('btn-add-note');
     elements.btnOpenAll = document.getElementById('btn-open-all');
     elements.btnCollectionMenu = document.getElementById('btn-collection-menu');
@@ -52,8 +57,10 @@ export function initElements() {
     // Settings Inputs
     elements.settingTileWidth = document.getElementById('setting-tile-width');
     elements.tileWidthValue = document.getElementById('tile-width-value');
-    elements.settingDeviceName = document.getElementById('setting-device-name');
-    elements.btnSaveDeviceName = document.getElementById('btn-save-device-name');
+    elements.displayDeviceName = document.getElementById('display-device-name');
+    elements.settingSyncMode = document.getElementById('setting-sync-mode');
+    elements.sectionFolderSync = document.getElementById('section-folder-sync');
+    elements.syncModeHint = document.getElementById('sync-mode-hint');
 
     // Modals
     elements.modalCreateCollection = document.getElementById('modal-create-collection');

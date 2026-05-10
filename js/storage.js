@@ -73,6 +73,9 @@ export const CollectionStorage = {
                     collections = collections.filter(c => !c.isDeleted);
                 }
                 
+                // updatedAt の降順でソート（最新を一番上へ）
+                collections.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+                
                 let pending = collections.length;
 
                 if (pending === 0) {
@@ -416,6 +419,7 @@ export const CollectionStorage = {
                 resolve(request.result || {
                     syncEnabled: false,
                     syncPassword: '',
+                    syncMode: 'folder', // 'folder' or 'bookmark'
                     lastSyncTime: null
                 });
             };

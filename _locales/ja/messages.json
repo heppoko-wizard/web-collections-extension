@@ -1,6 +1,6 @@
 {
     "appName": {
-        "message": "Web Collections (Edge代替)"
+        "message": "Web Collections"
     },
     "appDesc": {
         "message": "Edge Collectionsの機能を再現し、Google Driveで暗号化同期を行う拡張機能です。"

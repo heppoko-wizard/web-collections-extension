@@ -13,11 +13,20 @@
     <!-- ヘッダー -->
     <header class="header">
       <h1 class="header-title">
-        <span class="header-icon">📚</span>
-        コレクション
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="header-icon"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 2v20"/></svg>
+        <span>コレクション</span>
       </h1>
       <div class="header-actions">
-        <button id="btn-settings" class="icon-btn" title="設定">⚙️</button>
+        <button id="btn-theme-toggle" class="icon-btn" aria-label="テーマ切り替え" title="テーマ切り替え">
+          <!-- Default is moon (dark mode). JS will toggle this. -->
+          <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          <svg id="icon-sun" style="display: none;" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        <button id="btn-sync-all" class="icon-btn" aria-label="同期" title="同期">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        </button>
+        <button id="btn-settings" class="icon-btn" aria-label="設定" title="設定">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.72V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
       </div>
     </header>
 
@@ -27,7 +36,7 @@
       <section id="view-list" class="view active">
         <div class="action-bar">
           <button id="btn-new-collection" class="btn btn-primary">
-            <span class="btn-icon">+</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             新しいコレクション
           </button>
         </div>
@@ -39,22 +48,34 @@
       <!-- コレクション詳細ビュー -->
       <section id="view-detail" class="view">
         <div class="detail-header">
-          <button id="btn-back" class="icon-btn">←</button>
+          <button id="btn-back" class="icon-btn" aria-label="戻る">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+          </button>
           <h2 id="collection-title" class="collection-title" contenteditable="true"></h2>
           <div class="detail-actions">
-            <button id="btn-layout-toggle" class="icon-btn" title="表示切り替え">田</button>
-            <button id="btn-open-all" class="icon-btn" title="すべて開く">🔗</button>
-            <button id="btn-collection-menu" class="icon-btn" title="メニュー">⋯</button>
+            <button id="btn-layout-toggle" class="icon-btn" aria-label="表示切り替え" title="表示切り替え">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            </button>
+            <button id="btn-open-all" class="icon-btn" aria-label="すべて開く" title="すべて開く">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </button>
+            <button id="btn-collection-menu" class="icon-btn" aria-label="メニュー" title="メニュー">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+            </button>
           </div>
         </div>
         <div class="action-bar">
           <button id="btn-add-page" class="btn btn-secondary">
-            <span class="btn-icon">📄</span>
-            このページを追加
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+            このページ
+          </button>
+          <button id="btn-add-all-tabs" class="btn btn-secondary" title="現在のウィンドウの全タブを追加">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M11 3v18"/><path d="M15 3v18"/><path d="M19 3v18"/></svg>
+            全タブ
           </button>
           <button id="btn-add-note" class="btn btn-secondary">
-            <span class="btn-icon">📝</span>
-            メモを追加
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>
+            メモ
           </button>
         </div>
         <div id="items-container" class="items-list-container">
@@ -69,48 +90,87 @@
       <!-- 設定ビュー -->
       <section id="view-settings" class="view">
         <div class="detail-header">
-          <button id="btn-back-settings" class="icon-btn">←</button>
+          <button id="btn-back-settings" class="icon-btn" aria-label="戻る">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+          </button>
           <h2>設定</h2>
         </div>
         <div class="settings-content">
           <!-- 表示設定 -->
           <div class="settings-section">
-            <h3>🎨 表示設定</h3>
+            <h3>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="4"></circle></svg>
+              表示設定
+            </h3>
             <div class="setting-item">
               <label>タイル表示の最小幅: <span id="tile-width-value">140</span>px</label>
               <input type="range" id="setting-tile-width" min="100" max="350" step="10" value="140">
             </div>
           </div>
 
-          <!-- 📁 ローカルフォルダ共有 -->
           <div class="settings-section">
-            <h3>📁 ローカルフォルダ共有</h3>
+            <h3>🔄 同期方法の選択</h3>
+            <div class="setting-item">
+              <select id="setting-sync-mode" class="select-full" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary);">
+                <option value="folder">📁 ローカルフォルダ (OneDrive/Google Drive)</option>
+                <option value="bookmark">🔖 Chrome ブックマーク (自動同期)</option>
+              </select>
+              <p class="hint" id="sync-mode-hint" style="margin-top: 8px;">ブックマーク同期は設定不要で Google アカウント経由で同期されます。</p>
+            </div>
+          </div>
+
+          <!-- 📁 ローカルフォルダ共有 -->
+          <div class="settings-section" id="section-folder-sync">
+            <h3>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H21a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+              ローカルフォルダ共有
+            </h3>
             <p class="hint">OneDriveやGoogle Driveの同期フォルダを指定して、デバイス間でデータを共有します</p>
             <div class="setting-item">
-              <label>このデバイスの名前</label>
-              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <input type="text" id="setting-device-name" placeholder="デバイス名を入力..." style="flex: 1; padding: 6px var(--spacing-sm); font-size: 13px;">
-                <button id="btn-save-device-name" class="btn btn-secondary" style="padding: 4px var(--spacing-sm);">更新</button>
+              <label>デバイス情報</label>
+              <div id="device-info-display" class="hint" style="margin-top: 4px; font-family: var(--font-mono); opacity: 0.8;">
+                <span id="display-device-name">読み込み中...</span>
               </div>
             </div>
-            <div class="setting-item">
-              <button id="btn-select-folder" class="btn btn-secondary">📁 フォルダを選択</button>
-              <div id="selected-folder-info" style="display: none; margin-left: 10px;">
-                <span class="folder-path-label">✅ 設定済み</span>
-                <button id="btn-grant-permission" class="btn btn-primary" style="display: none; margin-left: 10px;">⚠️ 権限を再許可</button>
+            <div class="setting-item" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <button id="btn-select-folder" class="btn btn-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                フォルダを選択
+              </button>
+              <div id="selected-folder-info" style="display: none; align-items: center; gap: 10px;">
+                <span class="folder-path-label">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: middle;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  設定済み
+                </span>
+                <button id="btn-grant-permission" class="btn btn-primary" style="display: none;">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="12" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                  権限を再許可
+                </button>
               </div>
             </div>
             <div class="setting-item" id="folder-sync-actions" style="display: none;">
-              <button id="btn-folder-sync-push" class="btn btn-primary">⬆️ 今すぐエクスポート</button>
-              <button id="btn-folder-sync-pull" class="btn btn-secondary">⬇️ 今すぐインポート</button>
-              <button id="btn-folder-unlink" class="btn btn-secondary" title="連携を解除">🔗 解除</button>
+              <button id="btn-folder-sync-push" class="btn btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                今すぐエクスポート
+              </button>
+              <button id="btn-folder-sync-pull" class="btn btn-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                今すぐインポート
+              </button>
+              <button id="btn-folder-unlink" class="btn btn-secondary" title="連携を解除">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5 5 0 0 0-7.07 0l-1.72 1.71"></path><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5 5 0 0 0 7.08 0l1.71-1.72"></path><line x1="8" y1="8" x2="16" y2="16"></line></svg>
+                解除
+              </button>
             </div>
             <p id="folder-sync-status" class="hint"></p>
           </div>
 
           <!-- エクスポート・インポート -->
           <div class="settings-section">
-            <h3>📦 データ管理</h3>
+            <h3>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"></path><path d="m21 16 1.58-1.58a1 1 0 0 0 0-1.42l-4.58-4.58a1 1 0 0 0-1.42 0L12 13"></path><path d="M3 13l4-4a1 1 0 0 1 1.42 0L12 13"></path><rect x="3" y="13" width="18" height="8" rx="2"></rect></svg>
+              データ管理
+            </h3>
             <div class="setting-item">
               <button id="btn-export-json" class="btn btn-secondary">JSONエクスポート</button>
               <button id="btn-export-csv" class="btn btn-secondary">CSVエクスポート</button>
@@ -151,8 +211,14 @@
     <!-- モーダル: コレクションメニュー -->
     <div id="modal-collection-menu" class="modal">
       <div class="modal-content modal-menu">
-        <button id="btn-delete-collection" class="menu-item danger">🗑️ コレクションを削除</button>
-        <button id="btn-export-collection" class="menu-item">📤 このコレクションをエクスポート</button>
+        <button id="btn-delete-collection" class="menu-item danger">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+          コレクションを削除
+        </button>
+        <button id="btn-export-collection" class="menu-item">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          このコレクションをエクスポート
+        </button>
         <button id="btn-menu-cancel" class="menu-item">キャンセル</button>
       </div>
     </div>
