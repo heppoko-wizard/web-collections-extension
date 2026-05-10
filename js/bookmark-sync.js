@@ -77,38 +77,53 @@ export const BookmarkSync = {
         const remoteFolders = rootTree.children.filter(c => !c.url);
 
         for (const col of collections) {
-            // コレクションフォルダの作成または更新
-            let colFolder = remoteFolders.find(f => {
+            const colFolder = remoteFolders.find(f => {
                 const meta = this.decodeMetadata(f);
                 return meta && meta.id === col.id;
             });
 
+            if (col.isDeleted) {
+                // ローカルで削除されている場合、ブックマーク側も削除
+                if (colFolder) {
+                    await chrome.bookmarks.removeTree(colFolder.id);
+                }
+                continue;
+            }
+
+            let targetFolder = colFolder;
             const colTitle = this.encodeMetadata(col, col.name);
 
-            if (!colFolder) {
-                colFolder = await chrome.bookmarks.create({
+            if (!targetFolder) {
+                targetFolder = await chrome.bookmarks.create({
                     parentId: root.id,
                     title: colTitle
                 });
-            } else if (colFolder.title !== colTitle) {
-                await chrome.bookmarks.update(colFolder.id, { title: colTitle });
+            } else if (targetFolder.title !== colTitle) {
+                await chrome.bookmarks.update(targetFolder.id, { title: colTitle });
             }
 
             // アイテムの同期
             const items = await storage.getItemsByCollection(col.id, true);
-            const remoteItems = colFolder.children || [];
+            const remoteItems = targetFolder.children || [];
 
             for (const item of items) {
-                let remoteItem = remoteItems.find(r => {
+                const remoteItem = remoteItems.find(r => {
                     const meta = this.decodeMetadata(r);
                     return meta && meta.id === item.id;
                 });
+
+                if (item.isDeleted) {
+                    if (remoteItem) {
+                        await chrome.bookmarks.remove(remoteItem.id);
+                    }
+                    continue;
+                }
 
                 const itemTitle = this.encodeMetadata(item, item.title);
 
                 if (!remoteItem) {
                     await chrome.bookmarks.create({
-                        parentId: colFolder.id,
+                        parentId: targetFolder.id,
                         title: itemTitle,
                         url: item.url || 'about:blank'
                     });
@@ -124,6 +139,7 @@ export const BookmarkSync = {
             }
         }
         console.log('BookmarkSync: Push completed.');
+        return { success: true };
     },
 
     /**

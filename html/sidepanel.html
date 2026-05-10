@@ -109,8 +109,15 @@
           </div>
 
           <div class="settings-section">
-            <h3>🔄 同期方法の選択</h3>
+            <h3>🔄 同期設定</h3>
             <div class="setting-item">
+              <label class="checkbox-container">
+                <input type="checkbox" id="setting-sync-enabled">
+                <span class="checkbox-label">自動同期を有効にする</span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label>同期方法</label>
               <select id="setting-sync-mode" class="select-full" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary);">
                 <option value="folder">📁 ローカルフォルダ (OneDrive/Google Drive)</option>
                 <option value="bookmark">🔖 Chrome ブックマーク (自動同期)</option>

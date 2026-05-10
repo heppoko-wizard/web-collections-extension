@@ -58,6 +58,7 @@ export function initElements() {
     elements.settingTileWidth = document.getElementById('setting-tile-width');
     elements.tileWidthValue = document.getElementById('tile-width-value');
     elements.displayDeviceName = document.getElementById('display-device-name');
+    elements.settingSyncEnabled = document.getElementById('setting-sync-enabled');
     elements.settingSyncMode = document.getElementById('setting-sync-mode');
     elements.sectionFolderSync = document.getElementById('section-folder-sync');
     elements.syncModeHint = document.getElementById('sync-mode-hint');

@@ -330,16 +330,19 @@ export async function updateSettingsUI() {
         elements.displayDeviceName.textContent = `${deviceInfo.deviceName} (${deviceInfo.deviceId})`;
     }
 
-    // 同期モードの表示
+    // 同期設定の表示
+    if (elements.settingSyncEnabled) {
+        elements.settingSyncEnabled.checked = settings.syncEnabled || false;
+    }
     if (elements.settingSyncMode) {
         elements.settingSyncMode.value = settings.syncMode || 'folder';
         updateSyncModeUI(settings.syncMode || 'folder');
     }
 
     applyDisplaySettings();
-    }
+}
 
-    function updateSyncModeUI(mode) {
+function updateSyncModeUI(mode) {
     if (mode === 'folder') {
         elements.sectionFolderSync.style.display = 'block';
         elements.syncModeHint.textContent = 'OneDriveやGoogle Driveの同期フォルダを使用して、デバイス間でデータを共有します。';
@@ -347,16 +350,26 @@ export async function updateSettingsUI() {
         elements.sectionFolderSync.style.display = 'none';
         elements.syncModeHint.textContent = 'Chrome標準のブックマーク同期機能を使用して、設定不要でデータを共有します。';
     }
-    }
+}
 
-    export async function saveSyncMode() {
+export async function saveSyncSettings() {
+    const enabled = elements.settingSyncEnabled.checked;
     const mode = elements.settingSyncMode.value;
+    
     const response = await sendMessage({ action: 'getSettings' });
     const settings = response.data || {};
+    
+    settings.syncEnabled = enabled;
     settings.syncMode = mode;
+    
     await sendMessage({ action: 'saveSettings', settings });
     updateSyncModeUI(mode);
+    
+    if (enabled) {
+        // 有効にした直後に一回Pullを実行
+        await autoSyncPull();
     }
+}
 
 
 

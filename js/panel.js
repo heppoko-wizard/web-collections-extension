@@ -46,7 +46,7 @@ async function init() {
         pullFromFolder: Actions.pullFromFolder,
         unlinkFolder: Actions.unlinkFolder,
         grantFolderPermission: Actions.grantFolderPermission,
-        saveSyncMode: Actions.saveSyncMode,
+        saveSyncSettings: Actions.saveSyncSettings,
         toggleLayout: Actions.toggleLayout,
         addItemMemo: Actions.addItemMemo,
         renameItem: Actions.renameItem,
@@ -67,6 +67,9 @@ async function init() {
     if (session.pendingAction === 'createCollection') {
         await chrome.storage.session.remove('pendingAction');
         Actions.showCreateCollectionModal();
+    } else if (session.pendingAction === 'openSettings') {
+        await chrome.storage.session.remove('pendingAction');
+        Actions.showView('settings');
     }
     
     // 6. 初期ビューの表示

@@ -119,8 +119,15 @@ export function renderItems(elements, setupDragAndDrop) {
     // Attach scroll listener if not already attached
     const scrollContainer = elements.itemsContainer;
     if (!scrollContainer.dataset.hasScrollListener) {
+        let isScrolling = false;
         scrollContainer.addEventListener('scroll', () => {
-            renderVisibleItems(elements);
+            if (!isScrolling) {
+                requestAnimationFrame(() => {
+                    renderVisibleItems(elements);
+                    isScrolling = false;
+                });
+                isScrolling = true;
+            }
         });
         scrollContainer.dataset.hasScrollListener = 'true';
 
@@ -189,7 +196,7 @@ export function renderVisibleItems(elements) {
     const visibleItems = items.slice(startIndex, endIndex + 1);
     const offsetY = startIndex * itemHeight;
 
-    itemsList.style.transform = `translateY(${offsetY}px)`;
+    itemsList.style.marginTop = `${offsetY}px`;
     itemsList.innerHTML = visibleItems.map(item => renderItem(item)).join('');
 }
 

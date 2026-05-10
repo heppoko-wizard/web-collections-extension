@@ -12,22 +12,32 @@ let syncTimeout = null;
 /**
  * 自動同期をスケジュール（デバウンス）
  */
-function scheduleAutoSync() {
-    if (syncTimeout) clearTimeout(syncTimeout);
-    syncTimeout = setTimeout(async () => {
-        console.log('Background: Executing scheduled auto-sync...');
-        try {
-            await SyncManager.pushToLocalFolder(CollectionStorage);
-            console.log('Background: Auto-sync success');
-        } catch (error) {
-            if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
-                console.warn('Background: Sync permission denied. Showing notification.');
-                showPermissionNotification();
-            } else {
-                console.error('Background: Auto-sync failed:', error);
-            }
+async function scheduleAutoSync() {
+    const settings = await CollectionStorage.getSettings();
+    if (!settings.syncEnabled) return;
+
+    // setTimeout は Service Worker のスリープにより中断される可能性があるため、
+    // 本来は chrome.alarms を使うべきだが、5秒という短期間のため
+    // ここではアラーム名で管理する
+    chrome.alarms.create('deferred-auto-sync-push', { delayInMinutes: 0.1 }); // 約6秒後
+}
+
+/**
+ * 実際の同期実行処理
+ */
+export async function executeAutoSyncPush() {
+    console.log('Background: Executing scheduled auto-sync...');
+    try {
+        await SyncManager.pushToLocalFolder(CollectionStorage);
+        console.log('Background: Auto-sync success');
+    } catch (error) {
+        if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
+            console.warn('Background: Sync permission denied. Showing notification.');
+            showPermissionNotification();
+        } else {
+            console.error('Background: Auto-sync failed:', error);
         }
-    }, 5000); // 5秒のデバウンス
+    }
 }
 
 /**

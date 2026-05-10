@@ -92,8 +92,11 @@ export function initEvents(handlers) {
     elements.btnFolderSyncPull.addEventListener('click', () => handlers.pullFromFolder());
     elements.btnFolderUnlink.addEventListener('click', handlers.unlinkFolder);
 
+    if (elements.settingSyncEnabled) {
+        elements.settingSyncEnabled.addEventListener('change', handlers.saveSyncSettings);
+    }
     if (elements.settingSyncMode) {
-        elements.settingSyncMode.addEventListener('change', handlers.saveSyncMode);
+        elements.settingSyncMode.addEventListener('change', handlers.saveSyncSettings);
     }
 
     // Close modals on backdrop click

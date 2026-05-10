@@ -4,7 +4,7 @@
  */
 
 import { CollectionStorage } from './storage.js';
-import { handleMessage } from './background-handlers.js';
+import { handleMessage, executeAutoSyncPush } from './background-handlers.js';
 
 // 拡張機能インストール・更新時の初期化
 chrome.runtime.onInstalled.addListener(async () => {
@@ -49,6 +49,15 @@ function setupBookmarkListeners() {
     chrome.bookmarks.onRemoved.addListener(triggerSync);
 }
 
+// 通知クリック時の処理
+chrome.notifications.onClicked.addListener((notificationId) => {
+    if (notificationId === 'sync-permission-required') {
+        // 通知をクリックしたらサイドパネルを開く（可能であれば）
+        // 注: 常に動作するとは限りませんが、インテントとして有用
+        chrome.storage.session.set({ pendingAction: 'openSettings' });
+    }
+});
+
 // 定期実行アラームのセットアップ
 function setupAlarms() {
     chrome.alarms.create('auto-sync-polling', {
@@ -61,6 +70,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'auto-sync-polling') {
         handleMessage({ action: 'autoSyncPull' })
             .catch(err => console.warn('Background Alarm: Sync failed', err));
+    } else if (alarm.name === 'deferred-auto-sync-push') {
+        executeAutoSyncPush()
+            .catch(err => console.warn('Background Alarm: Auto-push failed', err));
     }
 });
 
