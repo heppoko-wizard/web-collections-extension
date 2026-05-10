@@ -3,7 +3,7 @@
  * クライアントサイドでデータを暗号化し、クラウドに安全に保存するためのモジュール
  */
 
-const CryptoUtils = {
+export const CryptoUtils = {
     /**
      * 固定キーを導出 (chrome.runtime.id ベース)
      * @returns {Promise<CryptoKey>} 導出されたAES-GCMキー
@@ -92,7 +92,15 @@ const CryptoUtils = {
     }
 };
 
-// ES Modules用エクスポート (Service Workerで使用)
+/**
+ * UUIDを生成 (crypto.randomUUID を使用)
+ * @returns {string}
+ */
+export function generateUUID() {
+    return crypto.randomUUID();
+}
+
+// 互換性維持のためのグローバル公開
 if (typeof globalThis !== 'undefined') {
     globalThis.CryptoUtils = CryptoUtils;
 }
