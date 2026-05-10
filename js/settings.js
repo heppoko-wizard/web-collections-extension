@@ -2,6 +2,8 @@
  * Settings Page Logic
  */
 
+import { GistSync } from './gist-sync.js';
+
 document.addEventListener('DOMContentLoaded', async () => {
     const tokenInput = document.getElementById('github-token');
     const saveTokenBtn = document.getElementById('save-token-btn');
