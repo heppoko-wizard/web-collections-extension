@@ -1,99 +1,109 @@
 // js/sync-manager.js
 
 /**
- * sync-manager.js - 同期のオーケストレーター
- * 外部ストレージ（Gist, Folder等）とローカルIndexedDBの同期フローを制御する
+ * sync-manager.js - 分散型同期オーケストレーター
+ * manifest.json と collections/*.json を用いた差分同期を制御する
  */
 
 import { mergeItem } from './sync-strategy.js';
+import { FolderSync } from './folder-sync.js';
 
 export const SyncManager = {
     /**
-     * 同期を実行
-     * @param {object} storage - 同期先ストレージ (GistSync, FolderSync等)
-     * @param {object} localStorage - ローカルストレージ (CollectionStorage)
+     * ローカルフォルダへの分散プッシュ
+     * @param {object} storage - CollectionStorage
      */
-    async sync(storage, localStorage) {
-        console.log('Starting synchronization...');
+    async pushToLocalFolder(storage) {
+        console.log('SyncManager: Starting decentralized push...');
         
         try {
-            // 1. ローカルとリモートのデータを取得
-            const localData = JSON.parse(await localStorage.exportToJson());
-            const remoteData = await storage.pull(); // 各ストレージが実装するpullメソッド
-
-            if (!remoteData) {
-                // リモートにデータがない場合はローカルをプッシュして終了
-                await storage.push(JSON.stringify(localData));
-                return { success: true, message: 'First sync: Initial push completed.' };
+            const rootHandle = await FolderSync.getSavedDirectoryHandle();
+            if (!rootHandle || !(await FolderSync.hasPermission(rootHandle, true))) {
+                throw new Error('PermissionDenied');
             }
 
-            const remoteJson = JSON.parse(remoteData);
-            const mergedCollections = this.mergeData(localData.collections, remoteJson.collections);
+            const colDirHandle = await FolderSync.getDirectoryHandle(rootHandle, FolderSync.COLLECTIONS_DIR, true);
+            const collections = await storage.getAllCollections(true); // 削除済みも含む
 
-            // 2. マージ結果を保存
-            const mergedData = {
-                collections: mergedCollections,
+            // 1. 各コレクションを個別ファイルとして保存
+            const manifest = [];
+            for (const col of collections) {
+                const fullData = await storage.exportCollection(col.id);
+                await FolderSync.writeFile(`${col.id}.json`, JSON.stringify(fullData), colDirHandle);
+                
+                // マニフェスト用メタデータ
+                manifest.push({
+                    id: col.id,
+                    name: col.name,
+                    updatedAt: col.updatedAt,
+                    itemCount: col.itemCount,
+                    isDeleted: col.isDeleted || false
+                });
+            }
+
+            // 2. マニフェストを保存
+            const manifestData = {
+                version: 2,
+                collections: manifest,
                 exportedAt: Date.now()
             };
+            await FolderSync.writeFile(FolderSync.FILENAME, JSON.stringify(manifestData), rootHandle);
 
-            await localStorage.importFromJson(JSON.stringify(mergedData));
-            await storage.push(JSON.stringify(mergedData));
-
-            console.log('Synchronization completed successfully.');
-            return { success: true, data: mergedData };
+            console.log('SyncManager: Decentralized push completed.');
+            return { success: true };
         } catch (error) {
-            console.error('Synchronization failed:', error);
+            console.error('SyncManager: Push failed:', error);
             throw error;
         }
     },
 
     /**
-     * 2つのコレクション配列をマージする
+     * ローカルフォルダからの分散プル
+     * @param {object} storage - CollectionStorage
      */
-    mergeData(localCols, remoteCols) {
-        const colMap = new Map();
+    async pullFromLocalFolder(storage) {
+        console.log('SyncManager: Starting decentralized pull...');
 
-        // ローカルデータをベースにする
-        localCols.forEach(col => colMap.set(col.id, col));
-
-        // リモートデータとマージ
-        remoteCols.forEach(remoteCol => {
-            const localCol = colMap.get(remoteCol.id);
-            if (!localCol) {
-                colMap.set(remoteCol.id, remoteCol);
-            } else {
-                // コレクション自体のメタデータをマージ
-                const mergedCol = mergeItem(localCol, remoteCol);
-                
-                // アイテムをマージ
-                mergedCol.items = this.mergeItems(localCol.items || [], remoteCol.items || []);
-                
-                colMap.set(remoteCol.id, mergedCol);
+        try {
+            const rootHandle = await FolderSync.getSavedDirectoryHandle();
+            if (!rootHandle || !(await FolderSync.hasPermission(rootHandle, false))) {
+                throw new Error('PermissionDenied');
             }
-        });
 
-        return Array.from(colMap.values());
+            // 1. マニフェストの読み込み
+            const manifestText = await FolderSync.readFile(FolderSync.FILENAME, rootHandle);
+            if (!manifestText) return { success: true, message: 'No manifest found' };
+            
+            const remoteManifest = JSON.parse(manifestText);
+            const colDirHandle = await FolderSync.getDirectoryHandle(rootHandle, FolderSync.COLLECTIONS_DIR, true);
+
+            // 2. 各コレクションの更新確認
+            for (const remoteCol of remoteManifest.collections) {
+                const localCol = await storage.getCollection(remoteCol.id);
+                
+                // リモートの方が新しい、またはローカルに存在しない場合にプル
+                if (!localCol || remoteCol.updatedAt > (localCol.updatedAt || 0)) {
+                    console.log(`SyncManager: Pulling updated collection: ${remoteCol.name}`);
+                    const colText = await FolderSync.readFile(`${remoteCol.id}.json`, colDirHandle);
+                    if (colText) {
+                        const colData = JSON.parse(colText);
+                        await storage.importCollectionData(colData);
+                    }
+                }
+            }
+
+            console.log('SyncManager: Decentralized pull completed.');
+            return { success: true };
+        } catch (error) {
+            console.error('SyncManager: Pull failed:', error);
+            throw error;
+        }
     },
 
     /**
-     * アイテム配列をマージする
+     * 旧互換メソッド（プレースホルダ）
      */
-    mergeItems(localItems, remoteItems) {
-        const itemMap = new Map();
-        localItems.forEach(item => itemMap.set(item.id, item));
-
-        remoteItems.forEach(remoteItem => {
-            const localItem = itemMap.get(remoteItem.id);
-            if (!localItem) {
-                itemMap.set(remoteItem.id, remoteItem);
-            } else {
-                itemMap.set(remoteItem.id, mergeItem(localItem, remoteItem));
-            }
-        });
-
-        // 削除済みフラグ (isDeleted) を考慮してフィルタリング (オプション)
-        // ここでは LWW によって isDeleted が真になったものが残る
-        
-        return Array.from(itemMap.values()).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    async sync(storage, localStorage) {
+        return this.pushToLocalFolder(localStorage);
     }
 };
