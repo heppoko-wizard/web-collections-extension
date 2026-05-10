@@ -33,8 +33,8 @@ export function initElements() {
     elements.btnLayoutToggle = document.getElementById('btn-layout-toggle');
 
     // Settings
-    elements.btnOpenSettings = document.getElementById('btn-open-settings');
-    elements.btnSyncNow = document.getElementById('btn-sync-now');
+    elements.btnGrantPermission = document.getElementById('btn-grant-permission');
+    elements.btnSyncNow = document.getElementById('btn-sync-now'); // Keep for autoSyncPull proxy if needed, but we'll use folder buttons
     elements.lastSyncTime = document.getElementById('last-sync-time');
     elements.btnExportJson = document.getElementById('btn-export-json');
     elements.btnExportCsv = document.getElementById('btn-export-csv');
@@ -52,8 +52,6 @@ export function initElements() {
     // Settings Inputs
     elements.settingTileWidth = document.getElementById('setting-tile-width');
     elements.tileWidthValue = document.getElementById('tile-width-value');
-    elements.settingSaveWidth = document.getElementById('setting-save-width');
-    elements.saveWidthValue = document.getElementById('save-width-value');
 
     // Modals
     elements.modalCreateCollection = document.getElementById('modal-create-collection');

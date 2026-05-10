@@ -55,7 +55,9 @@ export function initEvents(handlers) {
     elements.btnMenuCancel.addEventListener('click', () => hideModal(elements.modalCollectionMenu));
 
     // Settings
-    elements.btnOpenSettings.addEventListener('click', handlers.openSettings);
+    if (elements.btnGrantPermission) {
+        elements.btnGrantPermission.addEventListener('click', handlers.grantFolderPermission);
+    }
     if (elements.btnSyncNow) {
         elements.btnSyncNow.addEventListener('click', handlers.autoSyncPull);
     }
@@ -77,18 +79,6 @@ export function initEvents(handlers) {
 
         elements.settingTileWidth.addEventListener('change', async (e) => {
             const newSettings = { ...state.settings, tileMinWidth: parseInt(e.target.value, 10) };
-            if (handlers.saveSettings) await handlers.saveSettings(newSettings);
-        });
-    }
-
-    if (elements.settingSaveWidth) {
-        elements.settingSaveWidth.addEventListener('input', (e) => {
-            elements.saveWidthValue.textContent = e.target.value;
-            state.settings.imageSaveWidth = parseInt(e.target.value, 10);
-        });
-
-        elements.settingSaveWidth.addEventListener('change', async (e) => {
-            const newSettings = { ...state.settings, imageSaveWidth: parseInt(e.target.value, 10) };
             if (handlers.saveSettings) await handlers.saveSettings(newSettings);
         });
     }
@@ -124,6 +114,8 @@ export function initEvents(handlers) {
             if (state.currentView === 'detail' && state.currentCollectionId === message.collectionId) {
                 handlers.openCollection(state.currentCollectionId);
             }
+            // コンテキストメニュー等での追加後、自動保存を実行
+            handlers.autoSyncPush();
         }
     });
 

@@ -255,11 +255,6 @@ export async function updateSettingsUI() {
         elements.settingTileWidth.value = tileWidth;
         elements.tileWidthValue.textContent = tileWidth;
     }
-    if (elements.settingSaveWidth) {
-        const saveWidth = settings.imageSaveWidth || 350;
-        elements.settingSaveWidth.value = saveWidth;
-        elements.saveWidthValue.textContent = saveWidth;
-    }
 
     applyDisplaySettings();
 }
@@ -368,29 +363,88 @@ export async function unlinkFolder() {
     }
 }
 
+export async function grantFolderPermission() {
+    try {
+        const handle = await FolderSync.getSavedDirectoryHandle();
+        if (handle) {
+            const granted = await FolderSync.verifyPermission(handle, true);
+            if (granted) {
+                await checkFolderSyncStatus();
+                alert('フォルダへのアクセス権限を復旧しました。');
+            }
+        }
+    } catch (error) {
+        console.error('Grant permission failed:', error);
+    }
+}
+
 export async function checkFolderSyncStatus() {
     try {
         const handle = await FolderSync.getSavedDirectoryHandle();
-        const enabled = !!handle;
-        if (enabled) {
+        const exists = !!handle;
+        
+        if (exists) {
             elements.selectedFolderInfo.style.display = 'block';
             elements.folderSyncActions.style.display = 'block';
+            
+            // 権限があるか確認（UIを妨げない）
+            const hasAccess = await FolderSync.hasPermission(handle, true);
+            if (hasAccess) {
+                elements.btnGrantPermission.style.display = 'none';
+                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ フォルダへのアクセス権限があります。';
+            } else {
+                elements.btnGrantPermission.style.display = 'inline-block';
+                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '⚠️ 権限が切れています。「再許可」を押してください。';
+            }
         } else {
             elements.selectedFolderInfo.style.display = 'none';
             elements.folderSyncActions.style.display = 'none';
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '';
         }
     } catch (error) {
         console.error('Failed to check folder sync status:', error);
     }
 }
 
-export function autoSyncPush() {
-    sendMessage({ action: 'autoSyncPush' });
+/**
+ * データの変更を検知して自動的にフォルダへエクスポートする
+ */
+export async function autoSyncPush() {
+    try {
+        const handle = await FolderSync.getSavedDirectoryHandle();
+        // 権限がある場合のみ実行
+        if (handle && await FolderSync.hasPermission(handle, true)) {
+            const response = await sendMessage({ action: 'exportJson' });
+            if (response.success) {
+                await FolderSync.pushToFolder(response.data);
+                console.log('Auto-sync: Pushed to folder');
+            }
+        }
+    } catch (error) {
+        console.error('Auto-sync push failed:', error);
+    }
 }
 
+/**
+ * 起動時などに自動的にフォルダから最新データをロードする
+ */
 export async function autoSyncPull() {
-    await sendMessage({ action: 'autoSyncPull' });
-    await loadCollections();
+    try {
+        const handle = await FolderSync.getSavedDirectoryHandle();
+        // 権限がある場合のみ実行
+        if (handle && await FolderSync.hasPermission(handle, false)) {
+            const data = await FolderSync.pullFromFolder();
+            if (data) {
+                const response = await sendMessage({ action: 'importJson', data: JSON.stringify(data) });
+                if (response.success) {
+                    await loadCollections();
+                    console.log('Auto-sync: Pulled from folder');
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('Auto-sync pull skipped or failed:', error);
+    }
 }
 
 export function toggleLayout() {

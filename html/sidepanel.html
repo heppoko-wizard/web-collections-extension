@@ -82,43 +82,20 @@
             </div>
           </div>
 
-          <!-- 保存設定 -->
+          <!-- 📁 ローカルフォルダ共有 -->
           <div class="settings-section">
-            <h3>💾 保存設定</h3>
-            <div class="setting-item">
-              <label>画像保存サイズ (長辺): <span id="save-width-value">350</span>px</label>
-              <input type="range" id="setting-save-width" min="100" max="2000" step="50" value="350">
-              <div class="setting-desc" style="font-size: 0.85em; color: var(--text-secondary); margin-top: 4px;">
-                このサイズにリサイズされます（縦横比維持）</div>
-            </div>
-          </div>
-
-          <!-- 同期設定 -->
-          <div class="settings-section">
-            <h3>🔄 GitHub Gist 同期</h3>
-            <div class="setting-item">
-              <p class="hint">コレクションをGitHub Gistで同期できます</p>
-              <button id="btn-open-settings" class="btn btn-secondary">⚙️ トークン設定</button>
-            </div>
-            <div class="setting-item" id="sync-actions">
-              <button id="btn-sync-now" class="btn btn-primary">🔄 今すぐ同期</button>
-              <p id="last-sync-time" class="hint"></p>
-            </div>
-          </div>
-
-          <!-- 📁 ローカルフォルダ同期 -->
-          <div class="settings-section">
-            <h3>📁 ローカルフォルダ同期</h3>
-            <p class="hint">OneDriveやGoogle Driveの同期フォルダを指定できます</p>
+            <h3>📁 ローカルフォルダ共有</h3>
+            <p class="hint">OneDriveやGoogle Driveの同期フォルダを指定して、デバイス間でデータを共有します</p>
             <div class="setting-item">
               <button id="btn-select-folder" class="btn btn-secondary">📁 フォルダを選択</button>
               <div id="selected-folder-info" style="display: none; margin-left: 10px;">
                 <span class="folder-path-label">✅ 設定済み</span>
+                <button id="btn-grant-permission" class="btn btn-primary" style="display: none; margin-left: 10px;">⚠️ 権限を再許可</button>
               </div>
             </div>
             <div class="setting-item" id="folder-sync-actions" style="display: none;">
-              <button id="btn-folder-sync-push" class="btn btn-primary">⬆️ エクスポート</button>
-              <button id="btn-folder-sync-pull" class="btn btn-secondary">⬇️ インポート</button>
+              <button id="btn-folder-sync-push" class="btn btn-primary">⬆️ 今すぐエクスポート</button>
+              <button id="btn-folder-sync-pull" class="btn btn-secondary">⬇️ 今すぐインポート</button>
               <button id="btn-folder-unlink" class="btn btn-secondary" title="連携を解除">🔗 解除</button>
             </div>
             <p id="folder-sync-status" class="hint"></p>
