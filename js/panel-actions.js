@@ -9,6 +9,7 @@ import { state, updateState } from './panel-state.js';
 import * as Render from './panel-render.js';
 import { elements, showView, showModal, hideModal } from './panel-ui.js';
 import { migrateDataToUUIDs } from './migration.js';
+import { FolderSync } from './folder-sync.js';
 
 // Message API Helper
 async function sendMessage(message) {
@@ -306,36 +307,72 @@ export async function importFromJson(file) {
 }
 
 export async function selectFolder() {
-    const response = await sendMessage({ action: 'selectFolder' });
-    if (response.success) {
-        await checkFolderSyncStatus();
+    try {
+        const handle = await FolderSync.requestDirectoryAccess();
+        if (handle) {
+            await checkFolderSyncStatus();
+        }
+    } catch (error) {
+        console.error('Folder selection failed:', error);
+        alert('フォルダの選択に失敗しました: ' + error.message);
     }
 }
 
 export async function pushToFolder() {
-    await sendMessage({ action: 'pushToFolder' });
+    try {
+        const response = await sendMessage({ action: 'exportJson' });
+        if (response.success) {
+            await FolderSync.pushToFolder(response.data, (msg) => {
+                console.log(msg);
+                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = msg;
+            });
+            alert('エクスポートが完了しました');
+        }
+    } catch (error) {
+        console.error('Push to folder failed:', error);
+        alert('エクスポートに失敗しました: ' + error.message);
+    }
 }
 
 export async function pullFromFolder() {
-    await sendMessage({ action: 'pullFromFolder' });
-    await loadCollections();
+    try {
+        const data = await FolderSync.pullFromFolder((msg) => {
+            console.log(msg);
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = msg;
+        });
+        if (data) {
+            const response = await sendMessage({ action: 'importJson', data: JSON.stringify(data) });
+            if (response.success) {
+                alert('インポートが完了しました');
+                await loadCollections();
+            }
+        }
+    } catch (error) {
+        console.error('Pull from folder failed:', error);
+        alert('インポートに失敗しました: ' + error.message);
+    }
 }
 
 export async function unlinkFolder() {
     if (confirm('フォルダ連携を解除しますか？')) {
-        await sendMessage({ action: 'unlinkFolder' });
+        await FolderSync.clearSavedHandle();
         await checkFolderSyncStatus();
     }
 }
 
 export async function checkFolderSyncStatus() {
-    const response = await sendMessage({ action: 'checkFolderSyncStatus' });
-    if (response.success && response.enabled) {
-        elements.selectedFolderInfo.style.display = 'block';
-        elements.folderSyncActions.style.display = 'block';
-    } else {
-        elements.selectedFolderInfo.style.display = 'none';
-        elements.folderSyncActions.style.display = 'none';
+    try {
+        const handle = await FolderSync.getSavedDirectoryHandle();
+        const enabled = !!handle;
+        if (enabled) {
+            elements.selectedFolderInfo.style.display = 'block';
+            elements.folderSyncActions.style.display = 'block';
+        } else {
+            elements.selectedFolderInfo.style.display = 'none';
+            elements.folderSyncActions.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Failed to check folder sync status:', error);
     }
 }
 
