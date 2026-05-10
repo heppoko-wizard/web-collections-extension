@@ -10,7 +10,8 @@
     "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "js/background.js"
+    "service_worker": "js/background.js",
+    "type": "module"
   },
   "side_panel": {
     "default_path": "html/sidepanel.html"
