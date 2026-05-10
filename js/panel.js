@@ -6,6 +6,7 @@
 import { initElements } from './panel-ui.js';
 import { initEvents } from './panel-events.js';
 import * as Actions from './panel-actions.js';
+import { DeviceManager } from './device-manager.js';
 
 /**
  * アプリケーションの初期化
@@ -14,7 +15,11 @@ async function init() {
     // 1. DOM要素の取得
     initElements();
 
-    // 2. イベントリスナーの設定
+    // 2. デバイス情報の初期化
+    const deviceInfo = await DeviceManager.getDeviceInfo();
+    console.log('Device initialized:', deviceInfo.deviceName, deviceInfo.deviceId);
+
+    // 3. イベントリスナーの設定
     initEvents({
         showCreateCollectionModal: Actions.showCreateCollectionModal,
         saveNewCollection: Actions.saveNewCollection,
