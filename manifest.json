@@ -23,7 +23,8 @@
     "unlimitedStorage",
     "identity",
     "activeTab",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.googleapis.com/*",
