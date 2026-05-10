@@ -10,7 +10,11 @@ const CryptoUtils = {
      */
     async deriveFixedKey() {
         const encoder = new TextEncoder();
-        const hash = await crypto.subtle.digest('SHA-256', encoder.encode(chrome.runtime.id));
+        // 開発者モード(Unpacked)ではデバイスごとに chrome.runtime.id が異なるため、
+        // デバイス間で一貫して復号できるよう固定のシード文字列を使用します。
+        // （目的：クラウドドライブのクローラー回避）
+        const FIXED_SEED = 'web-collections-sync-fixed-key-for-anti-crawler';
+        const hash = await crypto.subtle.digest('SHA-256', encoder.encode(FIXED_SEED));
         return crypto.subtle.importKey(
             'raw',
             hash,

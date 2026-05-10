@@ -604,6 +604,51 @@ const CollectionStorage = {
             ...collection,
             items
         };
+    },
+
+    /**
+     * 単一のコレクションデータ（アイテム込み）をインポート
+     * @param {object} data
+     */
+    async importCollectionData(data) {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['collections', 'items'], 'readwrite');
+            const collectionStore = tx.objectStore('collections');
+            const itemStore = tx.objectStore('items');
+
+            // コレクションメタデータ保存
+            const colMeta = {
+                id: data.id,
+                name: data.name,
+                createdAt: data.createdAt,
+                updatedAt: data.updatedAt,
+                isDeleted: data.isDeleted || false
+            };
+            collectionStore.put(colMeta);
+
+            // アイテム保存（既存を削除してから追加）
+            const index = itemStore.index('collectionId');
+            const cursorReq = index.openCursor(IDBKeyRange.only(data.id));
+            cursorReq.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    cursor.delete();
+                    cursor.continue();
+                } else {
+                    // 古いアイテムの削除が終わってから新しいアイテムを追加
+                    if (data.items && Array.isArray(data.items)) {
+                        data.items.forEach(item => {
+                            itemStore.put({ ...item, collectionId: data.id });
+                        });
+                    }
+                }
+            };
+            cursorReq.onerror = () => reject(cursorReq.error);
+
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+        });
     }
 };
 

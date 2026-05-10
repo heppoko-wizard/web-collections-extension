@@ -798,6 +798,9 @@ async function selectFolder() {
             updateFolderSyncUI(true);
             elements.folderSyncStatus.textContent = `選択中: ${handle.name}`;
             elements.folderSyncStatus.className = 'hint success';
+            
+            // フォルダ選択直後に自動インポートを実行
+            await pullFromFolder(false);
         }
     } catch (error) {
         console.error('Folder selection failed:', error);
@@ -867,7 +870,7 @@ async function pushToFolder(silent = false) {
             const exportRes = await sendMessage({ action: 'exportCollection', id: colMeta.id });
             if (exportRes.success) {
                 const encrypted = await CryptoUtils.encrypt(JSON.stringify(exportRes.data));
-                await FolderSync.writeFile(`collection_${colMeta.id}.json`, encrypted);
+                await FolderSync.writeFile(`collection_${colMeta.id}.json`, JSON.stringify(encrypted));
             }
         }
 
@@ -877,14 +880,22 @@ async function pushToFolder(silent = false) {
         // 3-1. クラウド側のマニフェストを取得してマージ
         let cloudManifest = [];
         try {
-            const encryptedManifest = await FolderSync.readFile('manifest.json');
-            const manifestJson = await CryptoUtils.decrypt(encryptedManifest);
-            cloudManifest = JSON.parse(manifestJson);
+            const fileContent = await FolderSync.readFile('manifest.json');
+            try {
+                const encryptedData = JSON.parse(fileContent);
+                const manifestJson = await CryptoUtils.decrypt(encryptedData.encrypted, encryptedData.iv);
+                cloudManifest = JSON.parse(manifestJson);
+            } catch (decryptError) {
+                throw new Error('クラウドの manifest.json の復号に失敗しました。キーが異なるため上書きを中止します。');
+            }
         } catch (e) {
+            if (e.message.includes('復号に失敗')) {
+                throw e; // 復号エラーは致命的なため処理を中断する
+            }
             console.warn('Failed to load cloud manifest for merging. Creating new.', e);
         }
 
-        const allColsRes = await sendMessage({ action: 'getAllCollections', includeDeleted: true });
+        const allColsRes = await sendMessage({ action: 'getCollections', includeDeleted: true });
         const localCollections = allColsRes.data;
 
         const mergedMap = new Map();
@@ -906,7 +917,7 @@ async function pushToFolder(silent = false) {
 
         const mergedManifest = Array.from(mergedMap.values());
         const encryptedManifest = await CryptoUtils.encrypt(JSON.stringify(mergedManifest));
-        await FolderSync.writeFile('manifest.json', encryptedManifest);
+        await FolderSync.writeFile('manifest.json', JSON.stringify(encryptedManifest));
 
         // 4. 同期時刻を保存
         const now = Date.now();
@@ -943,17 +954,26 @@ async function pullFromFolder(silent = false) {
         // 1. manifest.json 読み込み
         let cloudManifest;
         try {
-            const encryptedManifest = await FolderSync.readFile('manifest.json');
-            const manifestJson = await CryptoUtils.decrypt(encryptedManifest);
-            cloudManifest = JSON.parse(manifestJson);
+            const fileContent = await FolderSync.readFile('manifest.json');
+            try {
+                const encryptedData = JSON.parse(fileContent);
+                const manifestJson = await CryptoUtils.decrypt(encryptedData.encrypted, encryptedData.iv);
+                cloudManifest = JSON.parse(manifestJson);
+            } catch (decryptError) {
+                console.error('Decryption failed for manifest.json:', decryptError);
+                throw new Error('復号に失敗しました。別のキーで暗号化されている可能性があります。');
+            }
         } catch (e) {
             console.warn('Failed to load manifest.json:', e);
+            if (e.message.includes('復号に失敗')) {
+                throw e; // 復号エラーはそのまま投げる
+            }
             if (silent) return; // サイレントモードではまだ同期データが無い場合は静かに終了
             throw new Error('同期データが見つかりません (manifest.json)');
         }
 
         // 2. ローカルの状態と比較
-        const allColsRes = await sendMessage({ action: 'getAllCollections', includeDeleted: true });
+        const allColsRes = await sendMessage({ action: 'getCollections', includeDeleted: true });
         const localCollections = allColsRes.data;
 
         const toUpdate = cloudManifest.filter(cloudCol => {
@@ -980,8 +1000,9 @@ async function pullFromFolder(silent = false) {
                     continue;
                 }
 
-                const encrypted = await FolderSync.readFile(`collection_${colMeta.id}.json`);
-                const decrypted = await CryptoUtils.decrypt(encrypted);
+                const fileContent = await FolderSync.readFile(`collection_${colMeta.id}.json`);
+                const encryptedData = JSON.parse(fileContent);
+                const decrypted = await CryptoUtils.decrypt(encryptedData.encrypted, encryptedData.iv);
                 const colData = JSON.parse(decrypted);
 
                 await sendMessage({ action: 'importCollection', data: colData });

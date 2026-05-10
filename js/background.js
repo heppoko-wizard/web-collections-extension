@@ -222,38 +222,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     break;
 
                 case 'importCollection':
-                    const data = message.data;
-                    const db = await CollectionStorage.openDB();
-                    const tx = db.transaction(['collections', 'items'], 'readwrite');
-                    const collectionStore = tx.objectStore('collections');
-                    const itemStore = tx.objectStore('items');
-
-                    // コレクションメタデータ保存
-                    const colMeta = {
-                        id: data.id,
-                        name: data.name,
-                        createdAt: data.createdAt,
-                        updatedAt: data.updatedAt
-                    };
-                    await collectionStore.put(colMeta);
-
-                    // アイテム保存（既存を削除してから追加）
-                    const index = itemStore.index('collectionId');
-                    const cursorReq = index.openCursor(IDBKeyRange.only(data.id));
-                    cursorReq.onsuccess = (e) => {
-                        const cursor = e.target.result;
-                        if (cursor) {
-                            cursor.delete();
-                            cursor.continue();
-                        }
-                    };
-
-                    data.items.forEach(item => {
-                        itemStore.put({ ...item, collectionId: data.id });
-                    });
-
-                    tx.oncomplete = () => sendResponse({ success: true });
-                    tx.onerror = () => sendResponse({ success: false, error: tx.error.message });
+                    await CollectionStorage.importCollectionData(message.data);
+                    sendResponse({ success: true });
                     break;
 
                 case 'getModifiedCollections':
