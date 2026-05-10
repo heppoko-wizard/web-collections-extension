@@ -234,15 +234,6 @@ export const CollectionStorage = {
      * @returns {Promise<object>} 追加されたアイテム
      */
     async addItem(collectionId, item) {
-        // 画像の場合、可能ならBase64変換を試みる
-        if (item.type === 'image' && item.imageUrl && typeof ImageProcessor !== 'undefined') {
-            try {
-                await ImageProcessor.optimizeItemImages(item);
-            } catch (error) {
-                console.warn('Image optimization skipped:', error);
-            }
-        }
-
         const db = await this.openDB();
 
         const newItem = {

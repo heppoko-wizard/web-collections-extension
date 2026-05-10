@@ -92,22 +92,36 @@ export const FolderSync = {
     },
 
     /**
-     * Verify permission for the handle
+     * ハンドルの権限を確認し、必要に応じて要求する
+     * @param {FileSystemHandle} handle
+     * @param {boolean} readWrite - 書き込み権限が必要か
+     * @returns {Promise<boolean>} 許可されたらtrue
      */
     async verifyPermission(handle, readWrite = false) {
         const options = { mode: readWrite ? 'readwrite' : 'read' };
 
-        // Check if permission was already granted
+        // 1. 現在の権限状態を確認
         if ((await handle.queryPermission(options)) === 'granted') {
             return true;
         }
 
-        // Request permission
+        // 2. 権限を要求（注意: ユーザージェスチャーが必要）
         if ((await handle.requestPermission(options)) === 'granted') {
             return true;
         }
 
         return false;
+    },
+
+    /**
+     * 権限があるかのみを確認（UIを妨げない）
+     * @param {FileSystemHandle} handle
+     * @param {boolean} readWrite
+     * @returns {Promise<boolean>}
+     */
+    async hasPermission(handle, readWrite = false) {
+        const options = { mode: readWrite ? 'readwrite' : 'read' };
+        return (await handle.queryPermission(options)) === 'granted';
     },
 
     /**

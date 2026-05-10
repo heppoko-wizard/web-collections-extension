@@ -37,10 +37,13 @@ async function init() {
         pushToFolder: Actions.pushToFolder,
         pullFromFolder: Actions.pullFromFolder,
         unlinkFolder: Actions.unlinkFolder,
+        grantFolderPermission: Actions.grantFolderPermission,
         toggleLayout: Actions.toggleLayout,
         addItemMemo: Actions.addItemMemo,
         renameItem: Actions.renameItem,
-        deleteItem: Actions.deleteItem
+        deleteItem: Actions.deleteItem,
+        autoSyncPush: Actions.autoSyncPush,
+        autoSyncPull: Actions.autoSyncPull
     });
 
     // 3. UUIDマイグレーションの実行
