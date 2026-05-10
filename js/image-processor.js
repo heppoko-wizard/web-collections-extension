@@ -3,7 +3,7 @@
  * Provides Base64 conversion utilities for background operations
  */
 
-const ImageProcessor = {
+export const ImageProcessor = {
     /**
      * Convert image URL to optimized Base64 (via offscreen document)
      * Service workers can't use Canvas directly, so this uses fetch + offscreen
@@ -114,6 +114,7 @@ const ImageProcessor = {
     }
 };
 
+// 互換性のためのグローバル
 if (typeof globalThis !== 'undefined') {
     globalThis.ImageProcessor = ImageProcessor;
 }

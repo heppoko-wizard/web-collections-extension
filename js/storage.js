@@ -8,7 +8,7 @@
  *   settings ストア: key-valueペア
  */
 
-const CollectionStorage = {
+export const CollectionStorage = {
     DB_NAME: 'WebCollectionsDB',
     DB_VERSION: 1,
     _db: null,
@@ -652,6 +652,3 @@ const CollectionStorage = {
     }
 };
 
-if (typeof globalThis !== 'undefined') {
-    globalThis.CollectionStorage = CollectionStorage;
-}
