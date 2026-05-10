@@ -7,8 +7,22 @@ export const FolderSync = {
     DB_NAME: 'WebCollectionsSyncDB',
     STORE_NAME: 'handles',
     HANDLE_KEY: 'sync_folder_handle',
-    FILENAME: 'manifest.json', // Main manifest file
+    MANIFESTS_DIR: 'manifests',
     COLLECTIONS_DIR: 'collections',
+
+    /**
+     * デバイス固有のマニフェストファイル名を取得
+     */
+    getManifestName(deviceId) {
+        return `manifest_${deviceId}.json`;
+    },
+
+    /**
+     * デバイス固有のコレクションファイル名を取得
+     */
+    getCollectionFileName(collectionId, deviceId) {
+        return `collection_${collectionId}_${deviceId}.json`;
+    },
 
     /**
      * Open DB and get object store
@@ -167,6 +181,23 @@ export const FolderSync = {
     },
 
     /**
+     * manifests/ ディレクトリ内のマニフェスト一覧を取得
+     */
+    async listManifests() {
+        const rootHandle = await this.getSavedDirectoryHandle();
+        if (!rootHandle) throw new Error('No folder selected');
+        
+        const manifestDirHandle = await this.getDirectoryHandle(rootHandle, this.MANIFESTS_DIR, true);
+        const files = [];
+        for await (const entry of manifestDirHandle.values()) {
+            if (entry.kind === 'file' && entry.name.startsWith('manifest_') && entry.name.endsWith('.json')) {
+                files.push(entry.name);
+            }
+        }
+        return files;
+    },
+
+    /**
      * collections/ ディレクトリ内のファイル一覧を取得
      */
     async listCollections() {
@@ -176,38 +207,13 @@ export const FolderSync = {
         const colDirHandle = await this.getDirectoryHandle(rootHandle, this.COLLECTIONS_DIR, true);
         const files = [];
         for await (const entry of colDirHandle.values()) {
-            if (entry.kind === 'file' && entry.name.endsWith('.json')) {
+            if (entry.kind === 'file' && entry.name.startsWith('collection_') && entry.name.endsWith('.json')) {
                 files.push(entry.name);
             }
         }
         return files;
     },
 
-    /**
-     * 旧互換メソッドをラップ（単一JSON用）
-     */
-    async pushToFolder(data, onProgress) {
-        if (onProgress) onProgress('Writing manifest...');
-        await this.writeFile(this.FILENAME, data);
-        if (onProgress) onProgress('Complete!');
-    },
-
-    /**
-     * 旧互換メソッドをラップ（単一JSON用）
-     */
-    async pullFromFolder(onProgress) {
-        if (onProgress) onProgress('Reading manifest...');
-        try {
-            const text = await this.readFile(this.FILENAME);
-            if (onProgress) onProgress('Complete!');
-            return JSON.parse(text);
-        } catch (error) {
-            if (error.name === 'NotFoundError') {
-                return null;
-            }
-            throw error;
-        }
-    }
 };
 
 // 互換性維持
