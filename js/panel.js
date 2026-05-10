@@ -16,7 +16,8 @@ async function init() {
 
     // 2. イベントリスナーの設定
     initEvents({
-        createCollection: Actions.createCollection,
+        showCreateCollectionModal: Actions.showCreateCollectionModal,
+        saveNewCollection: Actions.saveNewCollection,
         renderCollectionsList: Actions.loadCollections, // Reload collections
         addCurrentPage: Actions.addCurrentPage,
         addNote: Actions.addNote,
@@ -50,7 +51,14 @@ async function init() {
     await Actions.loadCollections();
     await Actions.checkFolderSyncStatus();
     
-    // 5. 初期ビューの表示
+    // 5. インテントの処理 (コンテキストメニュー等)
+    const session = await chrome.storage.session.get('pendingAction');
+    if (session.pendingAction === 'createCollection') {
+        await chrome.storage.session.remove('pendingAction');
+        Actions.showCreateCollectionModal();
+    }
+    
+    // 6. 初期ビューの表示
     // Actions.showView('list') is called inside initEvents via btnBack, etc.
     // but here we just ensure the UI is correct.
     

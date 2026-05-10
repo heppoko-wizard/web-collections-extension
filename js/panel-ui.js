@@ -56,6 +56,11 @@ export function initElements() {
     elements.saveWidthValue = document.getElementById('save-width-value');
 
     // Modals
+    elements.modalCreateCollection = document.getElementById('modal-create-collection');
+    elements.createCollectionInput = document.getElementById('create-collection-input');
+    elements.btnCreateCollectionSave = document.getElementById('btn-create-collection-save');
+    elements.btnCreateCollectionCancel = document.getElementById('btn-create-collection-cancel');
+
     elements.modalNote = document.getElementById('modal-note');
     elements.noteInput = document.getElementById('note-input');
     elements.btnNoteSave = document.getElementById('btn-note-save');

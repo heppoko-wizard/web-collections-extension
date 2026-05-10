@@ -13,7 +13,7 @@ import { elements, showView, showModal, hideModal } from './panel-ui.js';
  */
 export function initEvents(handlers) {
     // Navigation
-    elements.btnNewCollection.addEventListener('click', handlers.createCollection);
+    elements.btnNewCollection.addEventListener('click', handlers.showCreateCollectionModal);
     elements.btnSettings.addEventListener('click', () => showView('settings'));
     elements.btnBack.addEventListener('click', () => {
         showView('list');
@@ -35,6 +35,13 @@ export function initEvents(handlers) {
     // Note modal
     elements.btnNoteSave.addEventListener('click', handlers.saveNote);
     elements.btnNoteCancel.addEventListener('click', () => hideModal(elements.modalNote));
+
+    // Create collection modal
+    elements.btnCreateCollectionSave.addEventListener('click', handlers.saveNewCollection);
+    elements.btnCreateCollectionCancel.addEventListener('click', () => hideModal(elements.modalCreateCollection));
+    elements.createCollectionInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handlers.saveNewCollection();
+    });
 
     // Collection menu modal
     elements.btnDeleteCollection.addEventListener('click', handlers.deleteCurrentCollection);
@@ -93,7 +100,7 @@ export function initEvents(handlers) {
     elements.btnFolderUnlink.addEventListener('click', handlers.unlinkFolder);
 
     // Close modals on backdrop click
-    [elements.modalNote, elements.modalCollectionMenu].forEach(modal => {
+    [elements.modalNote, elements.modalCollectionMenu, elements.modalCreateCollection].forEach(modal => {
         if (modal) {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) hideModal(modal);
@@ -106,6 +113,7 @@ export function initEvents(handlers) {
         if (e.key === 'Escape') {
             hideModal(elements.modalNote);
             hideModal(elements.modalCollectionMenu);
+            hideModal(elements.modalCreateCollection);
         }
     });
 

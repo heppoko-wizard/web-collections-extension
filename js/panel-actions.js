@@ -34,16 +34,23 @@ export async function loadCollections() {
     }
 }
 
-export async function createCollection() {
-    const name = prompt('コレクション名を入力:', '新しいコレクション');
-    if (name) {
-        const response = await sendMessage({ action: 'createCollection', name });
-        if (response.success) {
-            state.collections.unshift(response.data);
-            Render.renderCollectionsList(elements, openCollection);
-            openCollection(response.data.id);
-            autoSyncPush();
-        }
+export async function showCreateCollectionModal() {
+    showModal(elements.modalCreateCollection);
+    elements.createCollectionInput.value = '';
+    elements.createCollectionInput.focus();
+}
+
+export async function saveNewCollection() {
+    const name = elements.createCollectionInput.value.trim();
+    if (!name) return;
+
+    const response = await sendMessage({ action: 'createCollection', name });
+    if (response.success) {
+        state.collections.unshift(response.data);
+        Render.renderCollectionsList(elements, openCollection);
+        hideModal(elements.modalCreateCollection);
+        openCollection(response.data.id);
+        autoSyncPush();
     }
 }
 

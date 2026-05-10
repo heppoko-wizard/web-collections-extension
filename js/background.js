@@ -73,6 +73,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId.startsWith('collection-')) {
         targetCollectionId = info.menuItemId.replace('collection-', '');
     } else if (info.menuItemId === 'create-new-collection-menu') {
+        // パネルを開いて新規作成を促す
+        await chrome.storage.session.set({ pendingAction: 'createCollection' });
         await chrome.sidePanel.open({ tabId: tab.id });
         return;
     } else {
