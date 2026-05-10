@@ -7,7 +7,8 @@ export const FolderSync = {
     DB_NAME: 'WebCollectionsSyncDB',
     STORE_NAME: 'handles',
     HANDLE_KEY: 'sync_folder_handle',
-    FILENAME: 'collections.json',
+    FILENAME: 'manifest.json', // Main manifest file
+    COLLECTIONS_DIR: 'collections',
 
     /**
      * Open DB and get object store
@@ -125,79 +126,87 @@ export const FolderSync = {
     },
 
     /**
-     * ファイルを書き込む（汎用）
+     * 指定された名前のディレクトリハンドルを取得（存在しなければ作成）
      */
-    async writeFile(filename, content) {
-        const dirHandle = await this.getSavedDirectoryHandle();
-        if (!dirHandle) throw new Error('No folder selected');
-        
-        const hasPermission = await this.verifyPermission(dirHandle, true);
-        if (!hasPermission) throw new Error('Permission denied');
+    async getDirectoryHandle(parentHandle, name, create = true) {
+        return await parentHandle.getDirectoryHandle(name, { create });
+    },
 
-        const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+    /**
+     * ファイルを書き込む（ディレクトリ指定対応）
+     * @param {string} filename 
+     * @param {string} content 
+     * @param {FileSystemDirectoryHandle} [dirHandle] 
+     */
+    async writeFile(filename, content, dirHandle = null) {
+        const targetDir = dirHandle || await this.getSavedDirectoryHandle();
+        if (!targetDir) throw new Error('No target directory');
+        
+        const hasPermission = await this.hasPermission(targetDir, true);
+        if (!hasPermission) throw new Error('Permission denied or expired');
+
+        const fileHandle = await targetDir.getFileHandle(filename, { create: true });
         const writable = await fileHandle.createWritable();
         await writable.write(content);
         await writable.close();
     },
 
     /**
-     * ファイルを読み込む（汎用）
+     * ファイルを読み込む（ディレクトリ指定対応）
      */
-    async readFile(filename) {
-        const dirHandle = await this.getSavedDirectoryHandle();
-        if (!dirHandle) throw new Error('No folder selected');
+    async readFile(filename, dirHandle = null) {
+        const targetDir = dirHandle || await this.getSavedDirectoryHandle();
+        if (!targetDir) throw new Error('No target directory');
 
-        const hasPermission = await this.verifyPermission(dirHandle, false);
-        if (!hasPermission) throw new Error('Permission denied');
+        const hasPermission = await this.hasPermission(targetDir, false);
+        if (!hasPermission) throw new Error('Permission denied or expired');
 
-        const fileHandle = await dirHandle.getFileHandle(filename);
+        const fileHandle = await targetDir.getFileHandle(filename);
         const file = await fileHandle.getFile();
         return await file.text();
     },
 
     /**
-     * Push data to folder (Legacy support for single file)
+     * collections/ ディレクトリ内のファイル一覧を取得
      */
-    async pushToFolder(data, onProgress) {
-        if (onProgress) onProgress('Writing file...');
-        await this.writeFile(this.FILENAME, data);
-        if (onProgress) onProgress('Export complete!');
-    },
-
-    /**
-     * Pull data from folder (Legacy support for single file)
-     */
-    async pullFromFolder(onProgress) {
-        if (onProgress) onProgress('Reading file...');
-        try {
-            const text = await this.readFile(this.FILENAME);
-            if (onProgress) onProgress('Import complete!');
-            return JSON.parse(text);
-        } catch (error) {
-            if (error.name === 'NotFoundError') {
-                throw new Error('collections.json not found');
-            }
-            throw error;
-        }
-    },
-
-    /**
-     * ディレクトリ内のファイル一覧を取得
-     */
-    async listFiles() {
-        const dirHandle = await this.getSavedDirectoryHandle();
-        if (!dirHandle) throw new Error('No folder selected');
+    async listCollections() {
+        const rootHandle = await this.getSavedDirectoryHandle();
+        if (!rootHandle) throw new Error('No folder selected');
         
-        const hasPermission = await this.verifyPermission(dirHandle, false);
-        if (!hasPermission) throw new Error('Permission denied');
-
+        const colDirHandle = await this.getDirectoryHandle(rootHandle, this.COLLECTIONS_DIR, true);
         const files = [];
-        for await (const entry of dirHandle.values()) {
-            if (entry.kind === 'file') {
+        for await (const entry of colDirHandle.values()) {
+            if (entry.kind === 'file' && entry.name.endsWith('.json')) {
                 files.push(entry.name);
             }
         }
         return files;
+    },
+
+    /**
+     * 旧互換メソッドをラップ（単一JSON用）
+     */
+    async pushToFolder(data, onProgress) {
+        if (onProgress) onProgress('Writing manifest...');
+        await this.writeFile(this.FILENAME, data);
+        if (onProgress) onProgress('Complete!');
+    },
+
+    /**
+     * 旧互換メソッドをラップ（単一JSON用）
+     */
+    async pullFromFolder(onProgress) {
+        if (onProgress) onProgress('Reading manifest...');
+        try {
+            const text = await this.readFile(this.FILENAME);
+            if (onProgress) onProgress('Complete!');
+            return JSON.parse(text);
+        } catch (error) {
+            if (error.name === 'NotFoundError') {
+                return null;
+            }
+            throw error;
+        }
     }
 };
 
