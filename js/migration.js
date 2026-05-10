@@ -16,3 +16,17 @@ export function migrateDataToUUIDs(items) {
         return item;
     });
 }
+
+/**
+ * 既存のアイテムからBase64画像データを削除する
+ * @param {Array} items - アイテムの配列
+ * @returns {Array} 画像データが削除された新しい配列
+ */
+export function purgeBase64Images(items) {
+    return items.map(item => {
+        if (item.imageUrl && item.imageUrl.startsWith('data:image/')) {
+            return { ...item, imageUrl: null, updatedAt: Date.now() };
+        }
+        return item;
+    });
+}

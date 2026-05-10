@@ -8,7 +8,7 @@
 import { state, updateState } from './panel-state.js';
 import * as Render from './panel-render.js';
 import { elements, showView, showModal, hideModal } from './panel-ui.js';
-import { migrateDataToUUIDs } from './migration.js';
+import { migrateDataToUUIDs, purgeBase64Images } from './migration.js';
 import { FolderSync } from './folder-sync.js';
 import { initDragDrop } from './panel-dragdrop.js';
 
@@ -453,34 +453,38 @@ export function toggleLayout() {
 }
 
 /**
- * UUIDへのマイグレーションを実行
+ * UUIDへのマイグレーションおよびBase64画像のパージを実行
  */
 export async function initUUIDMigration() {
-    const result = await chrome.storage.local.get('uuid_migration_completed');
-    if (result.uuid_migration_completed) return;
+    const result = await chrome.storage.local.get('uuid_migration_completed_v2');
+    if (result.uuid_migration_completed_v2) return;
 
-    console.log('Running UUID migration...');
+    console.log('Running UUID migration and Base64 purge...');
     
     // 全データを取得してマイグレーション
     const response = await sendMessage({ action: 'exportJson' });
     if (response.success) {
         const data = JSON.parse(response.data);
         
-        // コレクションIDをUUID化
+        // 1. コレクションIDをUUID化
         data.collections = migrateDataToUUIDs(data.collections);
         
-        // アイテムIDもUUID化
+        // 2. アイテムIDもUUID化 & Base64パージ
         data.collections.forEach(col => {
             if (col.items) {
+                // UUID化
                 col.items = migrateDataToUUIDs(col.items);
+                // Base64パージ
+                col.items = purgeBase64Images(col.items);
+                
                 // アイテム内のcollectionIdも更新
                 col.items.forEach(item => item.collectionId = col.id);
             }
         });
 
-        // 保存し直す
+        // 3. 保存し直す
         await sendMessage({ action: 'importJson', data: JSON.stringify(data) });
-        await chrome.storage.local.set({ uuid_migration_completed: true });
-        console.log('UUID migration completed.');
+        await chrome.storage.local.set({ uuid_migration_completed_v2: true });
+        console.log('Migration v2 completed.');
     }
 }
