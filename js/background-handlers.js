@@ -5,88 +5,149 @@
  */
 
 import { CollectionStorage } from './storage.js';
+import { SyncManager } from './sync-manager.js';
+
+let syncTimeout = null;
+
+/**
+ * 自動同期をスケジュール（デバウンス）
+ */
+function scheduleAutoSync() {
+    if (syncTimeout) clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(async () => {
+        console.log('Background: Executing scheduled auto-sync...');
+        try {
+            await SyncManager.pushToLocalFolder(CollectionStorage);
+            console.log('Background: Auto-sync success');
+        } catch (error) {
+            if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
+                console.warn('Background: Sync permission denied. Showing notification.');
+                showPermissionNotification();
+            } else {
+                console.error('Background: Auto-sync failed:', error);
+            }
+        }
+    }, 5000); // 5秒のデバウンス
+}
+
+/**
+ * 権限再取得の通知を表示
+ */
+function showPermissionNotification() {
+    chrome.notifications.create('sync-permission-required', {
+        type: 'basic',
+        iconUrl: '/icons/icon128.png',
+        title: '同期の権限が必要です',
+        message: 'ローカルフォルダへのアクセス権限が切れています。サイドパネルを開いて「再許可」をクリックしてください。',
+        priority: 2
+    });
+}
 
 /**
  * メッセージを処理し、適切なアクションを実行する
  */
 export async function handleMessage(message, setupContextMenus) {
+    let response = { success: true };
+
     switch (message.action) {
         case 'getCollections':
-            return { success: true, data: await CollectionStorage.getAllCollections(message.includeDeleted) };
+            response.data = await CollectionStorage.getAllCollections(message.includeDeleted);
+            break;
 
         case 'createCollection':
-            const newCol = await CollectionStorage.createCollection(message.name);
+            response.data = await CollectionStorage.createCollection(message.name);
             if (setupContextMenus) setupContextMenus();
-            return { success: true, data: newCol };
+            scheduleAutoSync();
+            break;
 
         case 'deleteCollection':
             await CollectionStorage.deleteCollection(message.id);
             if (setupContextMenus) setupContextMenus();
-            return { success: true };
+            scheduleAutoSync();
+            break;
 
         case 'addItem':
-            return { success: true, data: await CollectionStorage.addItem(message.collectionId, message.item) };
+            response.data = await CollectionStorage.addItem(message.collectionId, message.item);
+            scheduleAutoSync();
+            break;
 
         case 'removeItem':
             await CollectionStorage.removeItem(message.collectionId, message.itemId);
-            return { success: true };
+            scheduleAutoSync();
+            break;
 
         case 'reorderItems':
             await CollectionStorage.reorderItems(message.collectionId, message.itemIds);
-            return { success: true };
+            scheduleAutoSync();
+            break;
 
         case 'updateCollection':
             await CollectionStorage.updateCollection(message.id, message.updates);
-            return { success: true };
+            scheduleAutoSync();
+            break;
 
         case 'updateItem':
-            const updatedItem = await CollectionStorage.updateItem(message.collectionId, message.itemId, message.updates);
-            return { success: true, data: updatedItem };
+            response.data = await CollectionStorage.updateItem(message.collectionId, message.itemId, message.updates);
+            scheduleAutoSync();
+            break;
 
         case 'getItemsByCollection':
-            return { success: true, data: await CollectionStorage.getItemsByCollection(message.collectionId) };
+            response.data = await CollectionStorage.getItemsByCollection(message.collectionId);
+            break;
 
         case 'exportJson':
-            return { success: true, data: await CollectionStorage.exportToJson() };
+            response.data = await CollectionStorage.exportToJson();
+            break;
 
         case 'importJson':
             await CollectionStorage.importFromJson(message.data);
-            return { success: true };
+            break;
 
         case 'importCollection':
             await CollectionStorage.importCollectionData(message.data);
-            return { success: true };
+            break;
 
         case 'getModifiedCollections':
-            return { success: true, data: await CollectionStorage.getModifiedCollections(message.since) };
+            response.data = await CollectionStorage.getModifiedCollections(message.since);
+            break;
 
         case 'exportCollection':
-            return { success: true, data: await CollectionStorage.exportCollection(message.id) };
+            response.data = await CollectionStorage.exportCollection(message.id);
+            break;
 
         case 'getSettings':
-            return { success: true, data: await CollectionStorage.getSettings() };
+            response.data = await CollectionStorage.getSettings();
+            break;
 
         case 'saveLastSyncTime':
             const settings = await CollectionStorage.getSettings();
             settings.lastSyncTime = message.time;
             await CollectionStorage.saveSettings(settings);
-            return { success: true };
+            break;
 
         case 'saveSettings':
             await CollectionStorage.saveSettings(message.settings);
-            return { success: true };
+            break;
 
         case 'autoSyncPush':
-            // Placeholder: Call actual sync logic if available
-            console.log('Background autoSyncPush requested');
-            return { success: true };
+            scheduleAutoSync();
+            break;
 
         case 'autoSyncPull':
-            // Placeholder: Call actual sync logic if available
-            console.log('Background autoSyncPull requested');
+            try {
+                await SyncManager.pullFromLocalFolder(CollectionStorage);
+                return { success: true };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+
+        case 'checkFolderSyncStatus':
+            // パネル側で直接ハンドルを確認するため、ここでは不要だが互換性のために残す
             return { success: true };
 
         default:
             return { success: false, error: 'Unknown action: ' + message.action };
     }
+
+    return response;
 }
