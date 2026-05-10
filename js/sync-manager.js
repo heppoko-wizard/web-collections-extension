@@ -127,13 +127,11 @@ export const SyncManager = {
                     // 全デバイスの該当コレクションファイルを読み込んでマージ
                     const mergedItems = new Map();
                     
-                    // まずローカルのアイテムを入れる
-                    const localItems = await storage.getItemsByCollection(colId);
+                    // まずローカルのアイテムを入れる（削除済みも含む）
+                    const localItems = await storage.getItemsByCollection(colId, true);
                     localItems.forEach(item => mergedItems.set(item.id, item));
 
                     // 他デバイスの該当コレクションファイルを読み込む
-                    // (本当は manifest で更新があるデバイスだけに絞るのが効率的だが、
-                    //  今はシンプルに全デバイスの当該ファイルをスキャンする方針とする)
                     for (const fileName of manifestFiles) {
                         const deviceIdSuffix = fileName.replace('manifest_', '').replace('.json', '');
                         const colFileName = FolderSync.getCollectionFileName(colId, deviceIdSuffix);
@@ -144,6 +142,7 @@ export const SyncManager = {
                             
                             for (const remoteItem of (colData.items || [])) {
                                 const existing = mergedItems.get(remoteItem.id);
+                                // LWWマージ: updatedAt が新しい方を採用
                                 if (!existing || (remoteItem.updatedAt || 0) > (existing.updatedAt || 0)) {
                                     mergedItems.set(remoteItem.id, remoteItem);
                                 }
