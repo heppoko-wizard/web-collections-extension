@@ -176,10 +176,12 @@ body {
   display: none;
   padding: var(--spacing-md);
   animation: fadeIn 0.2s ease;
+  height: 100%;
+  flex-direction: column;
 }
 
 .view.active {
-  display: block;
+  display: flex;
 }
 
 @keyframes fadeIn {
@@ -300,12 +302,13 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
-  min-height: 200px;
+  /* Remove fixed min-height and rely on flex: 1 */
 }
 
 .virtual-scroll-spacer {
   position: relative;
   width: 100%;
+  min-height: 100%; /* Ensure spacer covers the container's height */
 }
 
 .items-list {
