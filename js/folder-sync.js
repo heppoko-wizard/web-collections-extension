@@ -3,7 +3,7 @@
  * Allows syncing collections data with a local folder (e.g., OneDrive, Google Drive)
  */
 
-const FolderSync = {
+export const FolderSync = {
     DB_NAME: 'WebCollectionsSyncDB',
     STORE_NAME: 'handles',
     HANDLE_KEY: 'sync_folder_handle',
@@ -187,5 +187,7 @@ const FolderSync = {
     }
 };
 
-// Make available globally
-window.FolderSync = FolderSync;
+// 互換性維持
+if (typeof window !== 'undefined') {
+    window.FolderSync = FolderSync;
+}
