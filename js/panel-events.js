@@ -49,6 +49,9 @@ export function initEvents(handlers) {
 
     // Settings
     elements.btnOpenSettings.addEventListener('click', handlers.openSettings);
+    if (elements.btnSyncNow) {
+        elements.btnSyncNow.addEventListener('click', handlers.autoSyncPull);
+    }
     elements.btnExportJson.addEventListener('click', handlers.exportToJson);
     elements.btnExportCsv.addEventListener('click', handlers.exportToCsv);
     elements.importFile.addEventListener('change', (e) => {

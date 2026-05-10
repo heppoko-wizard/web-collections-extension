@@ -76,6 +76,16 @@ export async function handleMessage(message, setupContextMenus) {
             await CollectionStorage.saveSettings(message.settings);
             return { success: true };
 
+        case 'autoSyncPush':
+            // Placeholder: Call actual sync logic if available
+            console.log('Background autoSyncPush requested');
+            return { success: true };
+
+        case 'autoSyncPull':
+            // Placeholder: Call actual sync logic if available
+            console.log('Background autoSyncPull requested');
+            return { success: true };
+
         default:
             return { success: false, error: 'Unknown action: ' + message.action };
     }

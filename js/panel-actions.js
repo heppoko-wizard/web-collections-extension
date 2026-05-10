@@ -10,6 +10,7 @@ import * as Render from './panel-render.js';
 import { elements, showView, showModal, hideModal } from './panel-ui.js';
 import { migrateDataToUUIDs } from './migration.js';
 import { FolderSync } from './folder-sync.js';
+import { initDragDrop } from './panel-dragdrop.js';
 
 // Message API Helper
 async function sendMessage(message) {
@@ -55,7 +56,7 @@ export async function openCollection(id) {
     } else {
         state.currentItems = [];
     }
-    Render.renderItems(elements, null); // drag-drop will be re-init by Render if needed
+    Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
 }
 
 export async function deleteCurrentCollection() {
@@ -107,7 +108,7 @@ export async function addCurrentPage() {
 
     if (response.success) {
         state.currentItems.unshift(response.data);
-        Render.renderItems(elements, null);
+        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
         autoSyncPush();
     }
 }
@@ -130,7 +131,7 @@ export async function saveNote() {
 
     if (response.success) {
         state.currentItems.unshift(response.data);
-        Render.renderItems(elements, null);
+        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
         hideModal(elements.modalNote);
         autoSyncPush();
     }
@@ -145,7 +146,7 @@ export async function deleteItem(itemId) {
 
     if (response.success) {
         state.currentItems = state.currentItems.filter(i => i.id !== itemId);
-        Render.renderItems(elements, null);
+        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
         autoSyncPush();
     }
 }
@@ -162,7 +163,7 @@ export async function updateItem(itemId, updates) {
         const index = state.currentItems.findIndex(i => i.id === itemId);
         if (index !== -1) {
             state.currentItems[index] = response.data;
-            Render.renderItems(elements, null);
+            Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
         }
         autoSyncPush();
     }
@@ -387,7 +388,7 @@ export async function autoSyncPull() {
 
 export function toggleLayout() {
     state.layoutMode = state.layoutMode === 'list' ? 'grid' : 'list';
-    Render.renderItems(elements, null);
+    Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
 }
 
 /**
