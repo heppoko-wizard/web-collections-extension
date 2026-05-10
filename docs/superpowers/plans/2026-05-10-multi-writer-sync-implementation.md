@@ -173,14 +173,11 @@ Show "Syncing with 3 devices" or similar status.
 
 ---
 
-## Chunk 5: Verification & Migration
+## Chunk 5: Verification
 
-### Task 6: Migration from Single-Writer
+### Task 6: Logic Verification
 **Files:**
-- Modify: `js/migration.js`
+- Modify: `tests/sync-strategy.test.js`
 
-- [ ] **Step 1: Handle old manifest.json**
-If `manifest.json` exists in root, treat it as a legacy single-writer file and migrate its content to the new structure on first sync.
-
-- [ ] **Step 2: Integration Test**
-Run: `npm test tests/sync-strategy.test.js` (Update tests to cover multi-device merge).
+- [ ] **Step 1: Integration Test**
+Run: `npm test tests/sync-strategy.test.js` (Update tests to cover multi-device merge logic).

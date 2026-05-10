@@ -91,7 +91,7 @@ export const CollectionStorage = {
                             const cursor = e.target.result;
                             if (cursor) {
                                 const item = cursor.value;
-                                if ((item.type === 'image' || item.imageUrl) && !col.firstImage) {
+                                if (!item.isDeleted && (item.type === 'image' || item.imageUrl) && !col.firstImage) {
                                     col.firstImage = item;
                                 }
                                 if (!col.firstImage) {
@@ -207,11 +207,12 @@ export const CollectionStorage = {
     },
 
     /**
-     * コレクションに属するアイテムを取得（sortOrder順）
+     * コレクションに属するアイテムを取得（sortOrder順、削除済みを除く）
      * @param {string} collectionId
+     * @param {boolean} includeDeleted - 削除済みのものも含めるか
      * @returns {Promise<Array>} アイテム配列
      */
-    async getItemsByCollection(collectionId) {
+    async getItemsByCollection(collectionId, includeDeleted = false) {
         const db = await this.openDB();
         return new Promise((resolve, reject) => {
             const tx = db.transaction('items', 'readonly');
@@ -219,7 +220,10 @@ export const CollectionStorage = {
             const index = store.index('collectionId');
             const request = index.getAll(IDBKeyRange.only(collectionId));
             request.onsuccess = () => {
-                const items = request.result;
+                let items = request.result;
+                if (!includeDeleted) {
+                    items = items.filter(i => !i.isDeleted);
+                }
                 items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
                 resolve(items);
             };
@@ -283,7 +287,7 @@ export const CollectionStorage = {
     },
 
     /**
-     * アイテムを削除
+     * アイテムを論理削除
      * @param {string} collectionId
      * @param {string} itemId
      */
@@ -294,18 +298,27 @@ export const CollectionStorage = {
             const itemStore = tx.objectStore('items');
             const collectionStore = tx.objectStore('collections');
 
-            itemStore.delete(itemId);
+            const getReq = itemStore.get(itemId);
+            getReq.onsuccess = () => {
+                const item = getReq.result;
+                if (item) {
+                    item.isDeleted = true;
+                    item.updatedAt = Date.now();
+                    itemStore.put(item);
 
-            // コレクションのupdatedAtを更新
-            const colReq = collectionStore.get(collectionId);
-            colReq.onsuccess = () => {
-                const col = colReq.result;
-                if (col) {
-                    col.updatedAt = Date.now();
-                    collectionStore.put(col);
+                    // コレクションのupdatedAtも更新
+                    const colReq = collectionStore.get(collectionId);
+                    colReq.onsuccess = () => {
+                        const col = colReq.result;
+                        if (col) {
+                            col.updatedAt = Date.now();
+                            collectionStore.put(col);
+                        }
+                    };
                 }
+                resolve();
             };
-
+            getReq.onerror = () => reject(getReq.error);
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
