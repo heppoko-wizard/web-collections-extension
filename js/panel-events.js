@@ -115,4 +115,41 @@ export function initEvents(handlers) {
             }
         }
     });
+
+    // Item Actions via Event Delegation
+    elements.itemsContainer.addEventListener('itemClick', (e) => {
+        const item = state.currentItems.find(i => i.id === e.detail.id);
+        if (item) {
+            const url = item.url || item.sourceUrl;
+            if (url) chrome.tabs.create({ url, active: false });
+        }
+    });
+
+    elements.itemsContainer.addEventListener('click', (e) => {
+        const target = e.target;
+        
+        // 2. Add Memo
+        const memoBtn = target.closest('.btn-add-memo');
+        if (memoBtn) {
+            e.stopPropagation();
+            handlers.addItemMemo(memoBtn.dataset.id);
+            return;
+        }
+
+        // 3. Rename
+        const renameBtn = target.closest('.btn-rename-item');
+        if (renameBtn) {
+            e.stopPropagation();
+            handlers.renameItem(renameBtn.dataset.id);
+            return;
+        }
+
+        // 4. Delete
+        const deleteBtn = target.closest('.btn-delete-item');
+        if (deleteBtn) {
+            e.stopPropagation();
+            handlers.deleteItem(deleteBtn.dataset.id);
+            return;
+        }
+    });
 }

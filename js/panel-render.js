@@ -100,6 +100,54 @@ export function renderItems(elements, setupDragAndDrop) {
     // Initial render of visible items
     renderVisibleItems(elements);
 
+    // Attach scroll listener if not already attached
+    const scrollContainer = elements.itemsContainer;
+    if (!scrollContainer.dataset.hasScrollListener) {
+        scrollContainer.addEventListener('scroll', () => {
+            renderVisibleItems(elements);
+        });
+        scrollContainer.dataset.hasScrollListener = 'true';
+
+        // Add event delegation for item actions
+        scrollContainer.addEventListener('click', (e) => {
+            const target = e.target;
+            
+            // 1. Item Menu Toggle
+            const menuBtn = target.closest('.btn-item-menu');
+            if (menuBtn) {
+                e.stopPropagation();
+                const id = menuBtn.dataset.id;
+                // Close others
+                elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => {
+                    if (m.dataset.id !== id) m.classList.remove('active');
+                });
+                // Toggle this
+                const dropdown = elements.itemsList.querySelector(`.item-menu-dropdown[data-id="${id}"]`);
+                if (dropdown) dropdown.classList.toggle('active');
+                return;
+            }
+
+            // アイテムのアクション（メモ、リネーム、削除）はカスタムイベント等でActionsへ通知するのが理想だが、
+            // ここでは簡易的にDOMから取得して発火させるか、グローバルなイベントとして扱う
+            // 今回は既存のロジックとの互換性を重視し、必要な属性をチェックする
+            
+            // Item Card Click (Open Link)
+            const card = target.closest('.item-card');
+            if (card) {
+                if (target.closest('button') || target.closest('a') || target.closest('.item-menu-dropdown')) {
+                    return;
+                }
+                const id = card.dataset.id;
+                // Dispatches a custom event to be handled by Actions/Events
+                const event = new CustomEvent('itemClick', { detail: { id } });
+                scrollContainer.dispatchEvent(event);
+            }
+
+            // Close all menus when clicking elsewhere
+            elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+        });
+    }
+
     // Setup drag and drop
     if (setupDragAndDrop) setupDragAndDrop();
 }
