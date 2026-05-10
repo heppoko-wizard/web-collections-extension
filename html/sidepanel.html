@@ -87,6 +87,13 @@
             <h3>📁 ローカルフォルダ共有</h3>
             <p class="hint">OneDriveやGoogle Driveの同期フォルダを指定して、デバイス間でデータを共有します</p>
             <div class="setting-item">
+              <label>このデバイスの名前</label>
+              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <input type="text" id="setting-device-name" placeholder="デバイス名を入力..." style="flex: 1; padding: 6px var(--spacing-sm); font-size: 13px;">
+                <button id="btn-save-device-name" class="btn btn-secondary" style="padding: 4px var(--spacing-sm);">更新</button>
+              </div>
+            </div>
+            <div class="setting-item">
               <button id="btn-select-folder" class="btn btn-secondary">📁 フォルダを選択</button>
               <div id="selected-folder-info" style="display: none; margin-left: 10px;">
                 <span class="folder-path-label">✅ 設定済み</span>

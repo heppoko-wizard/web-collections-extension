@@ -11,6 +11,7 @@ import { elements, showView, showModal, hideModal } from './panel-ui.js';
 import { migrateDataToUUIDs, purgeBase64Images } from './migration.js';
 import { FolderSync } from './folder-sync.js';
 import { initDragDrop } from './panel-dragdrop.js';
+import { DeviceManager } from './device-manager.js';
 
 // Message API Helper
 async function sendMessage(message) {
@@ -256,7 +257,21 @@ export async function updateSettingsUI() {
         elements.tileWidthValue.textContent = tileWidth;
     }
 
+    // デバイス名の表示
+    if (elements.settingDeviceName) {
+        const deviceInfo = await DeviceManager.getDeviceInfo();
+        elements.settingDeviceName.value = deviceInfo.deviceName;
+    }
+
     applyDisplaySettings();
+}
+
+export async function saveDeviceName() {
+    const newName = elements.settingDeviceName.value.trim();
+    if (newName) {
+        await DeviceManager.updateDeviceName(newName);
+        alert('デバイス名を更新しました。次回の同期から反映されます。');
+    }
 }
 
 export function applyDisplaySettings() {

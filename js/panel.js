@@ -43,6 +43,7 @@ async function init() {
         pullFromFolder: Actions.pullFromFolder,
         unlinkFolder: Actions.unlinkFolder,
         grantFolderPermission: Actions.grantFolderPermission,
+        saveDeviceName: Actions.saveDeviceName,
         toggleLayout: Actions.toggleLayout,
         addItemMemo: Actions.addItemMemo,
         renameItem: Actions.renameItem,

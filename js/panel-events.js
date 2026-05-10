@@ -84,6 +84,9 @@ export function initEvents(handlers) {
     }
 
     // Folder Sync
+    if (elements.btnSaveDeviceName) {
+        elements.btnSaveDeviceName.addEventListener('click', handlers.saveDeviceName);
+    }
     elements.btnSelectFolder.addEventListener('click', handlers.selectFolder);
     elements.btnFolderSyncPush.addEventListener('click', () => handlers.pushToFolder());
     elements.btnFolderSyncPull.addEventListener('click', () => handlers.pullFromFolder());

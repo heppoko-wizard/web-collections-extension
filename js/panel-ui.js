@@ -52,6 +52,8 @@ export function initElements() {
     // Settings Inputs
     elements.settingTileWidth = document.getElementById('setting-tile-width');
     elements.tileWidthValue = document.getElementById('tile-width-value');
+    elements.settingDeviceName = document.getElementById('setting-device-name');
+    elements.btnSaveDeviceName = document.getElementById('btn-save-device-name');
 
     // Modals
     elements.modalCreateCollection = document.getElementById('modal-create-collection');
