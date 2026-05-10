@@ -2,7 +2,7 @@
 
 /**
  * sync-manager.js - マルチライター対応分散型同期オーケストレーター
- * デバイス固有の manifest_[DeviceID].json と collection_[UUID]_[DeviceID].json を制御する
+ * 効率的なポーリング（段階的フィルタリング）をサポート
  */
 
 import { mergeItem } from './sync-strategy.js';
@@ -10,9 +10,10 @@ import { FolderSync } from './folder-sync.js';
 import { DeviceManager } from './device-manager.js';
 
 export const SyncManager = {
+    LAST_CHECKED_KEY: 'sync_last_checked_stamps',
+
     /**
      * ローカルフォルダへのマルチライター形式でのプッシュ
-     * @param {object} storage - CollectionStorage
      */
     async pushToLocalFolder(storage) {
         console.log('SyncManager: Starting multi-writer push...');
@@ -24,14 +25,12 @@ export const SyncManager = {
             }
 
             const { deviceId, deviceName } = await DeviceManager.getDeviceInfo();
-            
-            // ディレクトリハンドルの取得
             const manifestDirHandle = await FolderSync.getDirectoryHandle(rootHandle, FolderSync.MANIFESTS_DIR, true);
             const colDirHandle = await FolderSync.getDirectoryHandle(rootHandle, FolderSync.COLLECTIONS_DIR, true);
             
             const collections = await storage.getAllCollections(true);
 
-            // 1. 各コレクションをデバイス固有のファイルとして保存
+            // 1. 各コレクションを個別ファイルとして保存
             const manifest = [];
             for (const col of collections) {
                 const fullData = await storage.exportCollection(col.id);
@@ -47,7 +46,7 @@ export const SyncManager = {
                 });
             }
 
-            // 2. デバイス固有のマニフェストを保存
+            // 2. マニフェストを保存
             const manifestData = {
                 version: 3,
                 deviceId,
@@ -67,11 +66,11 @@ export const SyncManager = {
     },
 
     /**
-     * ローカルフォルダからのマルチライター形式でのプル＆マージ
-     * @param {object} storage - CollectionStorage
+     * 効率的なプル＆マージ
+     * OSタイムスタンプ -> マニフェスト内容 -> 個別ファイルの順でフィルタリング
      */
     async pullFromLocalFolder(storage) {
-        console.log('SyncManager: Starting multi-writer pull and merge...');
+        console.log('SyncManager: Starting efficient multi-writer pull...');
 
         try {
             const rootHandle = await FolderSync.getSavedDirectoryHandle();
@@ -83,55 +82,68 @@ export const SyncManager = {
             const manifestDirHandle = await FolderSync.getDirectoryHandle(rootHandle, FolderSync.MANIFESTS_DIR, true);
             const colDirHandle = await FolderSync.getDirectoryHandle(rootHandle, FolderSync.COLLECTIONS_DIR, true);
 
-            // 1. 全デバイスのマニフェストをリストアップ
+            // 前回のチェック時のタイムスタンプをロード
+            const stampsResult = await chrome.storage.local.get(this.LAST_CHECKED_KEY);
+            const lastStamps = stampsResult[this.LAST_CHECKED_KEY] || {};
+            const newStamps = {};
+
+            // 1. 全マニフェストファイルをリストアップ
             const manifestFiles = await FolderSync.listManifests();
-            
-            // 2. 全アイテムの最新状態を追跡するためのMap
-            // Key: CollectionID, Value: Map<ItemID, ItemData>
-            const collectionLatestItems = new Map();
-            // コレクション自体のメタデータ管理
-            const collectionLatestMeta = new Map();
+            const updatedManifests = [];
 
             for (const fileName of manifestFiles) {
+                const deviceId = fileName.replace('manifest_', '').replace('.json', '');
+                if (deviceId === currentDeviceId) continue;
+
+                // 【第1段階】OSレベルのタイムスタンプ比較
+                const currentTs = await FolderSync.getFileTimestamp(fileName, manifestDirHandle);
+                newStamps[deviceId] = currentTs;
+
+                if (currentTs > (lastStamps[deviceId] || 0)) {
+                    updatedManifests.push(fileName);
+                }
+            }
+
+            if (updatedManifests.length === 0) {
+                console.log('SyncManager: No remote changes detected (via OS timestamps).');
+                return { success: true, message: 'No changes' };
+            }
+
+            // 【第2段階】変更があったマニフェストの中身を精査
+            const collectionLatestMeta = new Map();
+
+            for (const fileName of updatedManifests) {
                 try {
                     const content = await FolderSync.readFile(fileName, manifestDirHandle);
                     const remoteManifest = JSON.parse(content);
-                    
-                    // 自分自身のファイルはスキップ（ローカルIndexedDBが正であるため）
-                    // ただし初回同期などの場合は考慮が必要だが、基本は他人の変更を取り込む
-                    if (remoteManifest.deviceId === currentDeviceId) continue;
 
                     for (const remoteColMeta of remoteManifest.collections) {
-                        // コレクションメタデータのマージ (LWW)
                         const existingMeta = collectionLatestMeta.get(remoteColMeta.id);
                         if (!existingMeta || remoteColMeta.updatedAt > existingMeta.updatedAt) {
                             collectionLatestMeta.set(remoteColMeta.id, {
                                 ...remoteColMeta,
-                                deviceId: remoteManifest.deviceId // どのデバイスから取得すべきか保持
+                                deviceId: remoteManifest.deviceId
                             });
                         }
-
-                        // アイテムのマージ準備（あとで実体ファイルを読み込む必要がある）
                     }
                 } catch (e) {
-                    console.warn(`SyncManager: Failed to read manifest ${fileName}`, e);
+                    console.warn(`SyncManager: Failed to parse manifest ${fileName}`, e);
                 }
             }
 
-            // 3. 各コレクションの実体ファイルを読み込み、アイテムレベルでマージ
+            // 【第3段階】本当に新しいデータを持つコレクションのみをプル
+            let anyChanges = false;
             for (const [colId, latestMeta] of collectionLatestMeta.entries()) {
                 const localCol = await storage.getCollection(colId);
                 
-                // ローカルより新しい、またはローカルに存在しない場合
                 if (!localCol || latestMeta.updatedAt > (localCol.updatedAt || 0)) {
-                    // 全デバイスの該当コレクションファイルを読み込んでマージ
-                    const mergedItems = new Map();
+                    console.log(`SyncManager: Pulling changed collection: ${latestMeta.name}`);
                     
-                    // まずローカルのアイテムを入れる（削除済みも含む）
+                    // アイテムレベルのマージ（全デバイスから収集）
+                    const mergedItems = new Map();
                     const localItems = await storage.getItemsByCollection(colId, true);
                     localItems.forEach(item => mergedItems.set(item.id, item));
 
-                    // 他デバイスの該当コレクションファイルを読み込む
                     for (const fileName of manifestFiles) {
                         const deviceIdSuffix = fileName.replace('manifest_', '').replace('.json', '');
                         const colFileName = FolderSync.getCollectionFileName(colId, deviceIdSuffix);
@@ -139,40 +151,31 @@ export const SyncManager = {
                         try {
                             const colContent = await FolderSync.readFile(colFileName, colDirHandle);
                             const colData = JSON.parse(colContent);
-                            
                             for (const remoteItem of (colData.items || [])) {
                                 const existing = mergedItems.get(remoteItem.id);
-                                // LWWマージ: updatedAt が新しい方を採用
                                 if (!existing || (remoteItem.updatedAt || 0) > (existing.updatedAt || 0)) {
                                     mergedItems.set(remoteItem.id, remoteItem);
                                 }
                             }
-                        } catch (e) {
-                            // ファイルが存在しないデバイスはスキップ
-                        }
+                        } catch (e) { /* ignore missing files */ }
                     }
 
-                    // 4. マージ結果を保存
-                    const finalCollection = {
+                    await storage.importCollectionData({
                         ...latestMeta,
                         items: Array.from(mergedItems.values())
-                    };
-                    await storage.importCollectionData(finalCollection);
+                    });
+                    anyChanges = true;
                 }
             }
 
-            console.log('SyncManager: Multi-writer pull completed.');
-            return { success: true };
+            // タイムスタンプを保存
+            await chrome.storage.local.set({ [this.LAST_CHECKED_KEY]: newStamps });
+
+            console.log('SyncManager: Efficient pull completed.');
+            return { success: true, updated: anyChanges };
         } catch (error) {
             console.error('SyncManager: Pull failed:', error);
             throw error;
         }
-    },
-
-    /**
-     * 旧互換メソッド
-     */
-    async sync(storage, localStorage) {
-        return this.pushToLocalFolder(localStorage);
     }
 };

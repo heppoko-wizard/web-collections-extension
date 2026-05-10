@@ -31,7 +31,23 @@ chrome.runtime.onInstalled.addListener(async () => {
     }
 
     setupContextMenus();
+    setupAlarms();
     console.log('Web Collections extension installed');
+});
+
+// 定期実行アラームのセットアップ
+function setupAlarms() {
+    chrome.alarms.create('auto-sync-polling', {
+        periodInMinutes: 1 // 1分ごとにチェック
+    });
+}
+
+// アラームリスナー
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'auto-sync-polling') {
+        handleMessage({ action: 'autoSyncPull' })
+            .catch(err => console.warn('Background Alarm: Sync failed', err));
+    }
 });
 
 // コンテキストメニューのセットアップ

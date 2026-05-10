@@ -181,6 +181,22 @@ export const FolderSync = {
     },
 
     /**
+     * ファイルのメタデータ（最終更新日時）を取得
+     */
+    async getFileTimestamp(filename, dirHandle = null) {
+        const targetDir = dirHandle || await this.getSavedDirectoryHandle();
+        if (!targetDir) return 0;
+        
+        try {
+            const fileHandle = await targetDir.getFileHandle(filename);
+            const file = await fileHandle.getFile();
+            return file.lastModified;
+        } catch (e) {
+            return 0;
+        }
+    },
+
+    /**
      * manifests/ ディレクトリ内のマニフェスト一覧を取得
      */
     async listManifests() {
