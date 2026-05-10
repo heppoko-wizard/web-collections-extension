@@ -166,6 +166,7 @@ async function handleAddItem(itemData, tab, collectionId = null) {
     }
 
     await CollectionStorage.addItem(targetId, itemData);
+    await setupContextMenus(); // メニューを再構築してソート順（最新を上）を反映
 
     chrome.runtime.sendMessage({
         action: 'collectionUpdated',

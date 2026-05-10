@@ -68,26 +68,31 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'addItem':
             response.data = await CollectionStorage.addItem(message.collectionId, message.item);
+            if (setupContextMenus) setupContextMenus();
             scheduleAutoSync();
             break;
 
         case 'removeItem':
             await CollectionStorage.removeItem(message.collectionId, message.itemId);
+            if (setupContextMenus) setupContextMenus();
             scheduleAutoSync();
             break;
 
         case 'reorderItems':
             await CollectionStorage.reorderItems(message.collectionId, message.itemIds);
+            if (setupContextMenus) setupContextMenus();
             scheduleAutoSync();
             break;
 
         case 'updateCollection':
             await CollectionStorage.updateCollection(message.id, message.updates);
+            if (setupContextMenus) setupContextMenus();
             scheduleAutoSync();
             break;
 
         case 'updateItem':
             response.data = await CollectionStorage.updateItem(message.collectionId, message.itemId, message.updates);
+            if (setupContextMenus) setupContextMenus();
             scheduleAutoSync();
             break;
 
