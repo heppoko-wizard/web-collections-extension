@@ -129,14 +129,22 @@ export async function handleMessage(message, setupContextMenus) {
             await CollectionStorage.saveSettings(message.settings);
             break;
 
+        case 'syncPush':
+            try {
+                await SyncManager.pushToLocalFolder(CollectionStorage);
+                return { success: true };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+
         case 'autoSyncPush':
             scheduleAutoSync();
             break;
 
         case 'autoSyncPull':
             try {
-                await SyncManager.pullFromLocalFolder(CollectionStorage);
-                return { success: true };
+                const result = await SyncManager.pullFromLocalFolder(CollectionStorage);
+                return result; // Returns { success: true, updated: boolean }
             } catch (error) {
                 return { success: false, error: error.message };
             }

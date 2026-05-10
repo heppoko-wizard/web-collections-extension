@@ -160,6 +160,10 @@ async function handleAddItem(itemData, tab, collectionId = null) {
 
     await chrome.action.setBadgeText({ text: '✓', tabId: tab.id });
     await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+
+    // Ensure background sync is triggered
+    handleMessage({ action: 'autoSyncPush' });
+
     setTimeout(async () => {
         await chrome.action.setBadgeText({ text: '', tabId: tab.id });
     }, 2000);

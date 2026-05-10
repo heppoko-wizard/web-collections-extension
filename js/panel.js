@@ -48,7 +48,6 @@ async function init() {
         addItemMemo: Actions.addItemMemo,
         renameItem: Actions.renameItem,
         deleteItem: Actions.deleteItem,
-        autoSyncPush: Actions.autoSyncPush,
         autoSyncPull: Actions.autoSyncPull
     });
 

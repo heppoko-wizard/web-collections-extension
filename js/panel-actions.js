@@ -51,7 +51,7 @@ export async function saveNewCollection() {
         Render.renderCollectionsList(elements, openCollection);
         hideModal(elements.modalCreateCollection);
         openCollection(response.data.id);
-        autoSyncPush();
+
     }
 }
 
@@ -81,7 +81,7 @@ export async function deleteCurrentCollection() {
         showView('list');
         Render.renderCollectionsList(elements, openCollection);
         hideModal(elements.modalCollectionMenu);
-        autoSyncPush();
+
     }
 }
 
@@ -95,7 +95,7 @@ export async function updateCollectionName() {
         });
         const collection = state.collections.find(c => c.id === state.currentCollectionId);
         if (collection) collection.name = newName;
-        autoSyncPush();
+
     }
 }
 
@@ -117,7 +117,7 @@ export async function addCurrentPage() {
     if (response.success) {
         state.currentItems.unshift(response.data);
         Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
-        autoSyncPush();
+
     }
 }
 
@@ -141,7 +141,7 @@ export async function saveNote() {
         state.currentItems.unshift(response.data);
         Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
         hideModal(elements.modalNote);
-        autoSyncPush();
+
     }
 }
 
@@ -155,7 +155,7 @@ export async function deleteItem(itemId) {
     if (response.success) {
         state.currentItems = state.currentItems.filter(i => i.id !== itemId);
         Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
-        autoSyncPush();
+
     }
 }
 
@@ -173,7 +173,7 @@ export async function updateItem(itemId, updates) {
             state.currentItems[index] = response.data;
             Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
         }
-        autoSyncPush();
+
     }
 }
 
@@ -229,7 +229,7 @@ export async function saveNewOrder(itemIds) {
 
     const itemMap = new Map(state.currentItems.map(i => [i.id, i]));
     state.currentItems = itemIds.map(id => itemMap.get(id)).filter(Boolean);
-    autoSyncPush();
+
 }
 
 export async function loadSettings() {
@@ -338,35 +338,35 @@ export async function selectFolder() {
 
 export async function pushToFolder() {
     try {
-        const response = await sendMessage({ action: 'exportJson' });
+        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = 'エクスポート中...';
+        const response = await sendMessage({ action: 'syncPush' });
         if (response.success) {
-            await FolderSync.pushToFolder(response.data, (msg) => {
-                console.log(msg);
-                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = msg;
-            });
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ エクスポート完了';
             alert('エクスポートが完了しました');
+        } else {
+            throw new Error(response.error);
         }
     } catch (error) {
         console.error('Push to folder failed:', error);
+        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ エクスポート失敗';
         alert('エクスポートに失敗しました: ' + error.message);
     }
 }
 
 export async function pullFromFolder() {
     try {
-        const data = await FolderSync.pullFromFolder((msg) => {
-            console.log(msg);
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = msg;
-        });
-        if (data) {
-            const response = await sendMessage({ action: 'importJson', data: JSON.stringify(data) });
-            if (response.success) {
-                alert('インポートが完了しました');
-                await loadCollections();
-            }
+        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = 'インポート中...';
+        const response = await sendMessage({ action: 'autoSyncPull' });
+        if (response.success) {
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ インポート完了';
+            alert('インポートが完了しました');
+            if (response.updated) await loadCollections();
+        } else {
+            throw new Error(response.error);
         }
     } catch (error) {
         console.error('Pull from folder failed:', error);
+        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ インポート失敗';
         alert('インポートに失敗しました: ' + error.message);
     }
 }
@@ -422,39 +422,16 @@ export async function checkFolderSyncStatus() {
 }
 
 /**
- * データの変更を検知して自動的にフォルダへエクスポートする
- */
-export async function autoSyncPush() {
-    try {
-        const handle = await FolderSync.getSavedDirectoryHandle();
-        // 権限がある場合のみ実行
-        if (handle && await FolderSync.hasPermission(handle, true)) {
-            const response = await sendMessage({ action: 'exportJson' });
-            if (response.success) {
-                await FolderSync.pushToFolder(response.data);
-                console.log('Auto-sync: Pushed to folder');
-            }
-        }
-    } catch (error) {
-        console.error('Auto-sync push failed:', error);
-    }
-}
-
-/**
  * 起動時などに自動的にフォルダから最新データをロードする
  */
 export async function autoSyncPull() {
     try {
         const handle = await FolderSync.getSavedDirectoryHandle();
-        // 権限がある場合のみ実行
         if (handle && await FolderSync.hasPermission(handle, false)) {
-            const data = await FolderSync.pullFromFolder();
-            if (data) {
-                const response = await sendMessage({ action: 'importJson', data: JSON.stringify(data) });
-                if (response.success) {
-                    await loadCollections();
-                    console.log('Auto-sync: Pulled from folder');
-                }
+            const response = await sendMessage({ action: 'autoSyncPull' });
+            if (response.success && response.updated) {
+                await loadCollections();
+                console.log('Auto-sync: Pulled from folder and updated UI');
             }
         }
     } catch (error) {

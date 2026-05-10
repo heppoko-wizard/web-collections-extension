@@ -117,8 +117,6 @@ export function initEvents(handlers) {
             if (state.currentView === 'detail' && state.currentCollectionId === message.collectionId) {
                 handlers.openCollection(state.currentCollectionId);
             }
-            // コンテキストメニュー等での追加後、自動保存を実行
-            handlers.autoSyncPush();
         }
     });
 
