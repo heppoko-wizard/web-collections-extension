@@ -4,6 +4,7 @@
  */
 
 import { state, updateState, subscribe, notify } from './panel-state.js';
+import * as Render from './panel-render.js';
 
 // ============================================
 // State Management
@@ -109,96 +110,20 @@ function showView(viewName) {
 }
 
 // ============================================
-// Render Functions
+// Rendering (Proxied to Render module)
 // ============================================
 function renderCollectionsList() {
-    const container = elements.collectionsContainer;
-
-    if (state.collections.length === 0) {
-        container.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">📚</div>
-        <p>コレクションがありません</p>
-        <p>「新しいコレクション」ボタンで作成しましょう</p>
-      </div>
-    `;
-        return;
-    }
-
-    container.innerHTML = state.collections.map(collection => {
-        const itemCount = collection.itemCount ?? collection.items?.length ?? 0;
-        const firstImage = collection.firstImage;
-        const thumbContent = firstImage?.imageUrl
-            ? `<img src="${escapeHtml(firstImage.imageUrl)}" alt="">`
-            : '📁';
-
-        return `
-      <div class="collection-card" data-id="${collection.id}">
-        <div class="collection-thumb">${thumbContent}</div>
-        <div class="collection-info">
-          <div class="collection-name">${escapeHtml(collection.name)}</div>
-          <div class="collection-meta">${itemCount} アイテム</div>
-        </div>
-      </div>
-    `;
-    }).join('');
-
-    // Add click handlers
-    container.querySelectorAll('.collection-card').forEach(card => {
-        card.addEventListener('click', () => {
-            openCollection(card.dataset.id);
-        });
-    });
+    Render.renderCollectionsList(elements, openCollection);
 }
 
-
-
-// ...
-
 function renderItems() {
-    const collection = state.collections.find(c => c.id === state.currentCollectionId);
-    if (!collection) return;
+    Render.renderItems(elements, setupDragAndDrop);
 
-    elements.collectionTitle.textContent = collection.name;
-
-    const items = state.currentItems;
-    const container = elements.itemsList;
     const scrollContainer = elements.itemsContainer;
-
-    // Apply layout class
-    container.className = 'items-list'; // Reset
-    container.classList.add(`layout-${state.layoutMode}`);
-
-    // Update toggle button icon
-    if (elements.btnLayoutToggle) {
-        elements.btnLayoutToggle.textContent = state.layoutMode === 'grid' ? '≡' : '田';
-        elements.btnLayoutToggle.title = state.layoutMode === 'grid' ? 'リスト表示にする' : 'タイル表示にする';
-    }
-
-    if (!items || items.length === 0) {
-        elements.virtualScrollSpacer.style.height = '0px';
-        container.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">📄</div>
-        <p>アイテムがありません</p>
-        <p>ページ上で右クリック→「コレクションに追加」</p>
-      </div>
-    `;
-        return;
-    }
-
-    // Calculate total height
-    const itemHeight = state.layoutMode === 'grid' ? ITEM_HEIGHT_GRID : ITEM_HEIGHT_LIST;
-    const totalHeight = items.length * itemHeight;
-    elements.virtualScrollSpacer.style.height = `${totalHeight}px`;
-
-    // Initial render
-    renderVisibleItems();
-
     // Attach scroll listener if not already attached
     if (!scrollContainer.dataset.hasScrollListener) {
         scrollContainer.addEventListener('scroll', () => {
-            renderVisibleItems();
+            Render.renderVisibleItems(elements);
         });
         scrollContainer.dataset.hasScrollListener = 'true';
 
@@ -264,30 +189,10 @@ function renderItems() {
             elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => m.classList.remove('active'));
         });
     }
-
-    // Setup drag and drop (Re-run for visible items)
-    setupDragAndDrop();
 }
 
 function renderVisibleItems() {
-    const scrollContainer = elements.itemsContainer;
-    const itemsList = elements.itemsList;
-    const items = state.currentItems;
-    
-    if (!items || items.length === 0) return;
-
-    const itemHeight = state.layoutMode === 'grid' ? ITEM_HEIGHT_GRID : ITEM_HEIGHT_LIST;
-    const scrollTop = scrollContainer.scrollTop;
-    const containerHeight = scrollContainer.clientHeight;
-
-    const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - BUFFER_SIZE);
-    const endIndex = Math.min(items.length - 1, Math.ceil((scrollTop + containerHeight) / itemHeight) + BUFFER_SIZE);
-
-    const visibleItems = items.slice(startIndex, endIndex + 1);
-    const offsetY = startIndex * itemHeight;
-
-    itemsList.style.transform = `translateY(${offsetY}px)`;
-    itemsList.innerHTML = visibleItems.map(item => renderItem(item)).join('');
+    Render.renderVisibleItems(elements);
 }
 
 function toggleLayout() {
@@ -329,69 +234,7 @@ function setupEventListeners() {
 }
 
 function renderItem(item) {
-    let thumbContent = '';
-    let content = '';
-
-    switch (item.type) {
-        case 'webpage':
-            thumbContent = item.faviconUrl
-                ? `<img src="${escapeHtml(item.faviconUrl)}" alt="">`
-                : '<span class="icon">🌐</span>';
-            content = `
-        <div class="item-title"><a href="${escapeHtml(item.url)}" target="_blank">${escapeHtml(item.title || item.url)}</a></div>
-        <div class="item-domain">${getDomain(item.url)}</div>
-      `;
-            break;
-
-        case 'image':
-            thumbContent = item.imageUrl
-                ? `<img src="${escapeHtml(item.imageUrl)}" alt="">`
-                : '<span class="icon">🖼️</span>';
-            content = `
-        <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">${escapeHtml(item.title || '画像')}</a></div>
-        <div class="item-domain">${getDomain(item.sourceUrl || item.url)}</div>
-      `;
-            break;
-
-        case 'text':
-            thumbContent = '<span class="icon">"</span>';
-            content = `
-        <div class="item-text">${escapeHtml(item.content)}</div>
-        <div class="item-domain">${getDomain(item.sourceUrl)}</div>
-      `;
-            break;
-
-        case 'note':
-            thumbContent = '<span class="icon">📝</span>';
-            content = `<div class="item-note">${escapeHtml(item.content)}</div>`;
-            break;
-
-        default:
-            thumbContent = '<span class="icon">📄</span>';
-            content = `<div class="item-title">${escapeHtml(item.title || 'アイテム')}</div>`;
-    }
-
-    // メモ表示
-    const memoContent = item.memo
-        ? `<div class="item-memo">📋 ${escapeHtml(item.memo)}</div>`
-        : '';
-
-    return `
-    <div class="item-card type-${item.type}" draggable="true" data-id="${item.id}">
-      <div class="item-thumb">${thumbContent}</div>
-      <div class="item-content">${content}${memoContent}</div>
-      <div class="item-actions">
-        <div class="item-menu-container">
-          <button class="icon-btn btn-item-menu" data-id="${item.id}" title="メニュー">⋮</button>
-          <div class="item-menu-dropdown" data-id="${item.id}">
-            <button class="menu-item btn-add-memo" data-id="${item.id}">📋 メモを追加</button>
-            <button class="menu-item btn-rename-item" data-id="${item.id}">✏️ 名前を変更</button>
-            <button class="menu-item btn-delete-item" data-id="${item.id}">🗑️ 削除</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
+    return Render.renderItem(item);
 }
 
 // ============================================
@@ -1070,25 +913,6 @@ function showModal(modal) {
 
 function hideModal(modal) {
     modal.classList.remove('active');
-}
-
-// ============================================
-// Utility Functions
-// ============================================
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function getDomain(url) {
-    if (!url) return '';
-    try {
-        return new URL(url).hostname;
-    } catch {
-        return url;
-    }
 }
 
 // ============================================
