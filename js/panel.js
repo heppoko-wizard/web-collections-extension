@@ -5,22 +5,12 @@
 
 import { state, updateState, subscribe, notify } from './panel-state.js';
 import * as Render from './panel-render.js';
-import { elements, initElements, showView as uiShowView, showModal, hideModal } from './panel-ui.js';
-
-// ============================================
-// State Management
-// ============================================
-// state is now imported from panel-state.js
+import { elements, initElements, showView, showModal, hideModal } from './panel-ui.js';
+import { initDragDrop } from './panel-dragdrop.js';
+import { initEvents } from './panel-events.js';
 
 // Virtual Scroll Constants
-const ITEM_HEIGHT_LIST = 100; // px
-const ITEM_HEIGHT_GRID = 220; // px
 const BUFFER_SIZE = 20; // items
-
-// ============================================
-// DOM Elements
-// ============================================
-// elements and initElements are now imported from panel-ui.js
 
 // ============================================
 // Message API Helper
@@ -32,16 +22,6 @@ async function sendMessage(message) {
 }
 
 // ============================================
-// View Switching
-// ============================================
-function showView(viewName) {
-    uiShowView(viewName);
-    if (viewName === 'settings') {
-        updateSettingsUI();
-    }
-}
-
-// ============================================
 // Rendering (Proxied to Render module)
 // ============================================
 function renderCollectionsList() {
@@ -49,78 +29,7 @@ function renderCollectionsList() {
 }
 
 function renderItems() {
-    Render.renderItems(elements, setupDragAndDrop);
-
-    const scrollContainer = elements.itemsContainer;
-    // Attach scroll listener if not already attached
-    if (!scrollContainer.dataset.hasScrollListener) {
-        scrollContainer.addEventListener('scroll', () => {
-            Render.renderVisibleItems(elements);
-        });
-        scrollContainer.dataset.hasScrollListener = 'true';
-
-        // Add event delegation for item actions
-        scrollContainer.addEventListener('click', (e) => {
-            const target = e.target;
-            
-            // 1. Item Menu Toggle
-            const menuBtn = target.closest('.btn-item-menu');
-            if (menuBtn) {
-                e.stopPropagation();
-                const id = menuBtn.dataset.id;
-                // Close others
-                elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => {
-                    if (m.dataset.id !== id) m.classList.remove('active');
-                });
-                // Toggle this
-                const dropdown = elements.itemsList.querySelector(`.item-menu-dropdown[data-id="${id}"]`);
-                if (dropdown) dropdown.classList.toggle('active');
-                return;
-            }
-
-            // 2. Add Memo
-            const memoBtn = target.closest('.btn-add-memo');
-            if (memoBtn) {
-                e.stopPropagation();
-                addItemMemo(memoBtn.dataset.id);
-                return;
-            }
-
-            // 3. Rename
-            const renameBtn = target.closest('.btn-rename-item');
-            if (renameBtn) {
-                e.stopPropagation();
-                renameItem(renameBtn.dataset.id);
-                return;
-            }
-
-            // 4. Delete
-            const deleteBtn = target.closest('.btn-delete-item');
-            if (deleteBtn) {
-                e.stopPropagation();
-                deleteItem(deleteBtn.dataset.id);
-                return;
-            }
-
-            // 5. Item Card Click (Open Link)
-            const card = target.closest('.item-card');
-            if (card) {
-                // Do not trigger if clicking a button or a link or inside menu
-                if (target.closest('button') || target.closest('a') || target.closest('.item-menu-dropdown')) {
-                    return;
-                }
-                const item = state.currentItems.find(i => i.id === card.dataset.id);
-                if (item) {
-                    const url = item.url || item.sourceUrl;
-                    if (url) chrome.tabs.create({ url, active: false });
-                }
-                return;
-            }
-
-            // Close all menus when clicking elsewhere
-            elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => m.classList.remove('active'));
-        });
-    }
+    Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
 }
 
 function renderVisibleItems() {
@@ -130,43 +39,6 @@ function renderVisibleItems() {
 function toggleLayout() {
     state.layoutMode = state.layoutMode === 'list' ? 'grid' : 'list';
     renderItems();
-}
-
-function setupEventListeners() {
-    // Navigation
-    elements.btnNewCollection.addEventListener('click', () => {
-        const title = prompt('コレクション名を入力:');
-        if (title) createCollection(title);
-    });
-
-    elements.btnSettings.addEventListener('click', () => showView('settings'));
-    elements.btnBack.addEventListener('click', () => showView('list'));
-    elements.btnBackSettings.addEventListener('click', () => showView('list'));
-
-    elements.btnOpenSettings.addEventListener('click', () => {
-        if (chrome.runtime.openOptionsPage) {
-            chrome.runtime.openOptionsPage();
-        } else {
-            window.open(chrome.runtime.getURL('options.html'));
-        }
-    });
-
-    elements.btnOpenAll.addEventListener('click', () => {
-        state.currentItems.forEach(item => {
-            const url = item.url || item.sourceUrl;
-            if (url) chrome.tabs.create({ url, active: false });
-        });
-    });
-
-    elements.btnCollectionMenu.addEventListener('click', showCollectionMenu);
-
-    if (elements.btnLayoutToggle) {
-        elements.btnLayoutToggle.addEventListener('click', toggleLayout);
-    }
-}
-
-function renderItem(item) {
-    return Render.renderItem(item);
 }
 
 // ============================================
@@ -196,7 +68,6 @@ async function createCollection() {
 async function openCollection(id) {
     state.currentCollectionId = id;
     showView('detail');
-    // アイテムを遅延ロード
     const response = await sendMessage({ action: 'getItemsByCollection', collectionId: id });
     if (response.success) {
         state.currentItems = response.data;
@@ -326,7 +197,6 @@ async function addItemMemo(itemId) {
     const currentMemo = item.memo || '';
     const memo = prompt('メモを入力:', currentMemo);
 
-    // キャンセル(null)以外の場合、空文字でも更新を行う（メモ削除のため）
     if (memo !== null) {
         await updateItem(itemId, { memo });
     }
@@ -366,101 +236,13 @@ async function openAllLinks() {
 // ============================================
 // Drag and Drop
 // ============================================
-// ============================================
-// Drag and Drop with Auto Scroll
-// ============================================
-function setupDragAndDrop() {
-    const scrollContainer = elements.itemsContainer;
-    let draggedElement = null;
-    let autoScrollSpeed = 0;
-    let animationFrameId = null;
-
-    if (scrollContainer.dataset.hasDragListener) return;
-
-    const startAutoScroll = () => {
-        if (autoScrollSpeed !== 0) {
-            scrollContainer.scrollBy(0, autoScrollSpeed);
-            animationFrameId = requestAnimationFrame(startAutoScroll);
-        } else {
-            animationFrameId = null;
-        }
-    };
-
-    const stopAutoScroll = () => {
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
-        }
-        autoScrollSpeed = 0;
-    };
-
-    scrollContainer.addEventListener('dragstart', (e) => {
-        const card = e.target.closest('.item-card');
-        if (card) {
-            draggedElement = card;
-            card.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            stopAutoScroll();
-        }
-    });
-
-    scrollContainer.addEventListener('dragend', (e) => {
-        const card = e.target.closest('.item-card');
-        if (card) {
-            card.classList.remove('dragging');
-            draggedElement = null;
-            stopAutoScroll();
-            saveNewOrder();
-        }
-    });
-
-    scrollContainer.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        const card = e.target.closest('.item-card');
-
-        // Auto Scroll Logic
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const sensitivity = 80;
-        const maxSpeed = 20;
-
-        if (e.clientY < containerRect.top + sensitivity) {
-            const intensity = (containerRect.top + sensitivity - e.clientY) / sensitivity;
-            autoScrollSpeed = -maxSpeed * Math.pow(intensity, 2);
-            if (!animationFrameId) startAutoScroll();
-        } else if (e.clientY > containerRect.bottom - sensitivity) {
-            const intensity = (e.clientY - (containerRect.bottom - sensitivity)) / sensitivity;
-            autoScrollSpeed = maxSpeed * Math.pow(intensity, 2);
-            if (!animationFrameId) startAutoScroll();
-        } else {
-            autoScrollSpeed = 0;
-        }
-
-        // Reordering Logic
-        if (card && draggedElement && card !== draggedElement) {
-            const rect = card.getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            if (e.clientY < midY) {
-                elements.itemsList.insertBefore(draggedElement, card);
-            } else {
-                elements.itemsList.insertBefore(draggedElement, card.nextSibling);
-            }
-        }
-    });
-
-    scrollContainer.dataset.hasDragListener = 'true';
-}
-
-async function saveNewOrder() {
-    const itemIds = Array.from(elements.itemsList.querySelectorAll('.item-card'))
-        .map(card => card.dataset.id);
-
+async function saveNewOrder(itemIds) {
     await sendMessage({
         action: 'reorderItems',
         collectionId: state.currentCollectionId,
         itemIds
     });
 
-    // Update local state
     const itemMap = new Map(state.currentItems.map(i => [i.id, i]));
     state.currentItems = itemIds.map(id => itemMap.get(id)).filter(Boolean);
     autoSyncPush();
@@ -506,44 +288,23 @@ function applyDisplaySettings() {
 }
 
 function openSettings() {
-    chrome.tabs.create({ url: chrome.runtime.getURL('html/settings.html') });
-}
-
-// Gist同期は凍結中
-// async function syncNow() { ... }
-
-// ============================================
-// Export & Import
-// ============================================
-async function exportToJson() {
-    const response = await sendMessage({ action: 'exportJson' });
-    if (response.success) {
-        downloadFile(response.data, 'collections.json', 'application/json');
+    if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+    } else {
+        window.open(chrome.runtime.getURL('options.html'));
     }
 }
 
-function exportToCsv() {
-    // CSVエクスポートは現在表示中のコレクションのアイテムのみ対象
-    const rows = [['Collection', 'Type', 'Title', 'URL', 'Content', 'Saved At']];
-    const collection = state.collections.find(c => c.id === state.currentCollectionId);
-    const collectionName = collection?.name || 'Unknown';
-
-    state.currentItems.forEach(item => {
-        rows.push([
-            collectionName,
-            item.type,
-            item.title || '',
-            item.url || item.sourceUrl || '',
-            item.content || '',
-            new Date(item.savedAt).toISOString()
-        ]);
+function exportToJson() {
+    sendMessage({ action: 'exportToJson' }).then(response => {
+        if (response.success) {
+            downloadFile(response.data, 'collections_backup.json', 'application/json');
+        }
     });
+}
 
-    const csv = rows.map(row =>
-        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
-
-    downloadFile(csv, 'collections.csv', 'text/csv');
+function exportToCsv() {
+    alert('CSVエクスポート機能は未実装です');
 }
 
 function downloadFile(content, filename, mimeType) {
@@ -552,408 +313,69 @@ function downloadFile(content, filename, mimeType) {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
 
+async function importFromJson(file) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const content = e.target.result;
+        const response = await sendMessage({ action: 'importFromJson', data: content });
+        if (response.success) {
+            alert('インポートが完了しました');
+            loadCollections();
+        }
+    };
+    reader.readAsText(file);
+}
+
 // ============================================
-// Folder Sync Operations
+// Folder Sync
 // ============================================
 async function selectFolder() {
-    try {
-        const handle = await FolderSync.requestDirectoryAccess();
-        if (handle) {
-            state.folderSyncEnabled = true;
-            updateFolderSyncUI(true);
-            elements.folderSyncStatus.textContent = `選択中: ${handle.name}`;
-            elements.folderSyncStatus.className = 'hint success';
-            
-            // フォルダ選択直後に自動インポートを実行
-            await pullFromFolder(false);
-        }
-    } catch (error) {
-        console.error('Folder selection failed:', error);
-        elements.folderSyncStatus.textContent = 'フォルダ選択エラー';
-        elements.folderSyncStatus.className = 'hint error';
+    const response = await sendMessage({ action: 'selectFolder' });
+    if (response.success) {
+        await checkFolderSyncStatus();
     }
 }
 
-async function updateFolderSyncUI(hasHandle) {
-    if (hasHandle) {
-        elements.selectedFolderInfo.style.display = 'inline-block';
-        elements.folderSyncActions.style.display = 'block';
-        elements.btnSelectFolder.textContent = '📁 フォルダを変更';
-    } else {
-        elements.selectedFolderInfo.style.display = 'none';
-        elements.folderSyncActions.style.display = 'none';
-        elements.btnSelectFolder.textContent = '📁 フォルダを選択';
-        elements.folderSyncStatus.textContent = '';
-    }
+async function pushToFolder() {
+    await sendMessage({ action: 'pushToFolder' });
 }
 
-/**
- * サイレントモードでの自動Push。UIをブロックせずバックグラウンドで実行する。
- */
-function autoSyncPush() {
-    if (!state.folderSyncEnabled) return;
-    pushToFolder(true).catch(err => console.warn('Auto push failed:', err));
-}
-
-/**
- * サイレントモードでの自動Pull。UIをブロックせずバックグラウンドで実行する。
- */
-async function autoSyncPull() {
-    if (!state.folderSyncEnabled) return;
-    try {
-        await pullFromFolder(true);
-    } catch (err) {
-        console.warn('Auto pull failed:', err);
-    }
-}
-
-async function pushToFolder(silent = false) {
-    try {
-        elements.btnFolderSyncPush.disabled = true;
-        if (!silent) elements.folderSyncStatus.textContent = '同期準備中...';
-
-        const settingsResponse = await sendMessage({ action: 'getSettings' });
-        const lastSyncTime = settingsResponse.data?.lastSyncTime || 0;
-
-        // 1. 変更されたコレクションを取得
-        const modResponse = await sendMessage({ action: 'getModifiedCollections', since: lastSyncTime });
-        const modified = modResponse.data || [];
-
-        if (modified.length === 0) {
-            if (!silent) {
-                elements.folderSyncStatus.textContent = '変更はありません';
-                setTimeout(() => { elements.folderSyncStatus.textContent = ''; }, 2000);
-            }
-            return;
-        }
-
-        // 2. 変更があったコレクションを個別に保存
-        for (let i = 0; i < modified.length; i++) {
-            const colMeta = modified[i];
-            if (!silent) elements.folderSyncStatus.textContent = `エクスポート中 (${i + 1}/${modified.length}): ${colMeta.name}`;
-            
-            const exportRes = await sendMessage({ action: 'exportCollection', id: colMeta.id });
-            if (exportRes.success) {
-                const encrypted = await CryptoUtils.encrypt(JSON.stringify(exportRes.data));
-                await FolderSync.writeFile(`collection_${colMeta.id}.json`, JSON.stringify(encrypted));
-            }
-        }
-
-        // 3. マニフェスト（全コレクションのメタデータ）を更新
-        if (!silent) elements.folderSyncStatus.textContent = 'マニフェスト更新中...';
-
-        // 3-1. クラウド側のマニフェストを取得してマージ
-        let cloudManifest = [];
-        try {
-            const fileContent = await FolderSync.readFile('manifest.json');
-            try {
-                const encryptedData = JSON.parse(fileContent);
-                const manifestJson = await CryptoUtils.decrypt(encryptedData.encrypted, encryptedData.iv);
-                cloudManifest = JSON.parse(manifestJson);
-            } catch (decryptError) {
-                throw new Error('クラウドの manifest.json の復号に失敗しました。キーが異なるため上書きを中止します。');
-            }
-        } catch (e) {
-            if (e.message.includes('復号に失敗')) {
-                throw e; // 復号エラーは致命的なため処理を中断する
-            }
-            console.warn('Failed to load cloud manifest for merging. Creating new.', e);
-        }
-
-        const allColsRes = await sendMessage({ action: 'getCollections', includeDeleted: true });
-        const localCollections = allColsRes.data;
-
-        const mergedMap = new Map();
-        // クラウド側を登録
-        cloudManifest.forEach(c => mergedMap.set(c.id, c));
-        // ローカル側で上書き・追加
-        localCollections.forEach(l => {
-            const existing = mergedMap.get(l.id);
-            if (!existing || (l.updatedAt || 0) >= (existing.updatedAt || 0)) {
-                mergedMap.set(l.id, {
-                    id: l.id,
-                    name: l.name,
-                    updatedAt: l.updatedAt,
-                    itemCount: l.itemCount,
-                    isDeleted: l.isDeleted || false
-                });
-            }
-        });
-
-        const mergedManifest = Array.from(mergedMap.values());
-        const encryptedManifest = await CryptoUtils.encrypt(JSON.stringify(mergedManifest));
-        await FolderSync.writeFile('manifest.json', JSON.stringify(encryptedManifest));
-
-        // 4. 同期時刻を保存
-        const now = Date.now();
-        await sendMessage({ action: 'saveLastSyncTime', time: now });
-
-        if (!silent) {
-            elements.folderSyncStatus.textContent = `✅ 同期完了 (${modified.length}件更新)`;
-            elements.folderSyncStatus.className = 'hint success';
-            setTimeout(() => {
-                elements.folderSyncStatus.textContent = '';
-            }, 3000);
-        } else {
-            console.log(`Auto sync push completed: ${modified.length} collections updated`);
-        }
-
-    } catch (error) {
-        console.error('Push failed:', error);
-        elements.folderSyncStatus.textContent = `エラー: ${error.message}`;
-        elements.folderSyncStatus.className = 'hint error';
-    } finally {
-        elements.btnFolderSyncPush.disabled = false;
-    }
-}
-
-async function pullFromFolder(silent = false) {
-    if (!silent && !confirm('フォルダから最新データを同期しますか？')) return;
-
-    try {
-        if (!silent) {
-            elements.btnFolderSyncPull.disabled = true;
-            elements.folderSyncStatus.textContent = 'マニフェスト取得中...';
-        }
-
-        // 1. manifest.json 読み込み
-        let cloudManifest;
-        try {
-            const fileContent = await FolderSync.readFile('manifest.json');
-            try {
-                const encryptedData = JSON.parse(fileContent);
-                const manifestJson = await CryptoUtils.decrypt(encryptedData.encrypted, encryptedData.iv);
-                cloudManifest = JSON.parse(manifestJson);
-            } catch (decryptError) {
-                console.error('Decryption failed for manifest.json:', decryptError);
-                throw new Error('復号に失敗しました。別のキーで暗号化されている可能性があります。');
-            }
-        } catch (e) {
-            console.warn('Failed to load manifest.json:', e);
-            if (e.message.includes('復号に失敗')) {
-                throw e; // 復号エラーはそのまま投げる
-            }
-            if (silent) return; // サイレントモードではまだ同期データが無い場合は静かに終了
-            throw new Error('同期データが見つかりません (manifest.json)');
-        }
-
-        // 2. ローカルの状態と比較
-        const allColsRes = await sendMessage({ action: 'getCollections', includeDeleted: true });
-        const localCollections = allColsRes.data;
-
-        const toUpdate = cloudManifest.filter(cloudCol => {
-            const localCol = localCollections.find(l => l.id === cloudCol.id);
-            return !localCol || (cloudCol.updatedAt || 0) > (localCol.updatedAt || 0);
-        });
-
-        if (toUpdate.length === 0) {
-            if (!silent) {
-                elements.folderSyncStatus.textContent = 'データは最新です';
-                setTimeout(() => { elements.folderSyncStatus.textContent = ''; }, 2000);
-            }
-            return;
-        }
-
-        // 3. 必要なコレクションのみインポート
-        for (let i = 0; i < toUpdate.length; i++) {
-            const colMeta = toUpdate[i];
-            if (!silent) elements.folderSyncStatus.textContent = `同期中 (${i + 1}/${toUpdate.length}): ${colMeta.name}`;
-
-            try {
-                if (colMeta.isDeleted) {
-                    await sendMessage({ action: 'deleteCollection', id: colMeta.id });
-                    continue;
-                }
-
-                const fileContent = await FolderSync.readFile(`collection_${colMeta.id}.json`);
-                const encryptedData = JSON.parse(fileContent);
-                const decrypted = await CryptoUtils.decrypt(encryptedData.encrypted, encryptedData.iv);
-                const colData = JSON.parse(decrypted);
-
-                await sendMessage({ action: 'importCollection', data: colData });
-            } catch (err) {
-                console.error(`Failed to sync collection ${colMeta.id}:`, err);
-            }
-        }
-
-        // 4. 同期時刻を更新
-        await sendMessage({ action: 'saveLastSyncTime', time: Date.now() });
-
-        // UI更新
-        await loadCollections();
-        if (state.currentCollectionId) {
-            await openCollection(state.currentCollectionId);
-        }
-
-        if (!silent) {
-            elements.folderSyncStatus.textContent = `✅ 同期完了 (${toUpdate.length}件更新)`;
-            elements.folderSyncStatus.className = 'hint success';
-            setTimeout(() => { elements.folderSyncStatus.textContent = ''; }, 3000);
-        } else {
-            console.log(`Auto sync pull completed: ${toUpdate.length} collections updated`);
-        }
-
-    } catch (error) {
-        console.error('Pull failed:', error);
-        if (!silent) {
-            elements.folderSyncStatus.textContent = `エラー: ${error.message}`;
-            elements.folderSyncStatus.className = 'hint error';
-        }
-    } finally {
-        if (!silent) elements.btnFolderSyncPull.disabled = false;
-    }
+async function pullFromFolder() {
+    await sendMessage({ action: 'pullFromFolder' });
+    await loadCollections();
 }
 
 async function unlinkFolder() {
-    if (!confirm('このフォルダとの連携を解除しますか？\n(実際のファイルは削除されません)')) return;
-
-    await FolderSync.clearSavedHandle();
-    state.folderSyncEnabled = false;
-    updateFolderSyncUI(false);
+    if (confirm('フォルダ連携を解除しますか？')) {
+        await sendMessage({ action: 'unlinkFolder' });
+        await checkFolderSyncStatus();
+    }
 }
 
 async function checkFolderSyncStatus() {
-    const handle = await FolderSync.getSavedDirectoryHandle();
-    if (handle) {
-        state.folderSyncEnabled = true;
-        updateFolderSyncUI(true);
-        elements.folderSyncStatus.textContent = `選択中: ${handle.name}`;
+    const response = await sendMessage({ action: 'checkFolderSyncStatus' });
+    if (response.success && response.enabled) {
+        elements.selectedFolderInfo.style.display = 'block';
+        elements.folderSyncActions.style.display = 'block';
     } else {
-        state.folderSyncEnabled = false;
+        elements.selectedFolderInfo.style.display = 'none';
+        elements.folderSyncActions.style.display = 'none';
     }
 }
 
-async function importFromJson(file) {
-    const text = await file.text();
-    const response = await sendMessage({ action: 'importJson', data: text });
-    if (response.success) {
-        await loadCollections();
-        alert('インポートが完了しました！');
-    }
+function autoSyncPush() {
+    sendMessage({ action: 'autoSyncPush' });
 }
 
-// ============================================
-// Modal Helpers
-// ============================================
-// showModal and hideModal are now imported from panel-ui.js
-
-// ============================================
-// Event Listeners
-// ============================================
-function setupEventListeners() {
-    // Navigation
-    elements.btnNewCollection.addEventListener('click', createCollection);
-    elements.btnSettings.addEventListener('click', () => showView('settings'));
-    elements.btnBack.addEventListener('click', () => {
-        showView('list');
-        renderCollectionsList();
-    });
-    elements.btnBackSettings.addEventListener('click', () => showView('list'));
-
-    // Collection detail
-    elements.btnAddPage.addEventListener('click', addCurrentPage);
-    elements.btnAddNote.addEventListener('click', addNote);
-    elements.btnOpenAll.addEventListener('click', openAllLinks);
-    elements.btnCollectionMenu.addEventListener('click', () => showModal(elements.modalCollectionMenu));
-    elements.collectionTitle.addEventListener('blur', updateCollectionName);
-
-    // Note modal
-    elements.btnNoteSave.addEventListener('click', saveNote);
-    elements.btnNoteCancel.addEventListener('click', () => hideModal(elements.modalNote));
-
-    // Collection menu modal
-    elements.btnDeleteCollection.addEventListener('click', deleteCurrentCollection);
-    elements.btnExportCollection.addEventListener('click', () => {
-        const collection = state.collections.find(c => c.id === state.currentCollectionId);
-        if (collection) {
-            downloadFile(JSON.stringify(collection, null, 2), `${collection.name}.json`, 'application/json');
-        }
-        hideModal(elements.modalCollectionMenu);
-    });
-    elements.btnMenuCancel.addEventListener('click', () => hideModal(elements.modalCollectionMenu));
-
-    // Settings
-    elements.btnOpenSettings.addEventListener('click', openSettings);
-    // elements.btnSyncNow.addEventListener('click', syncNow); // Gist同期凍結中
-    elements.btnExportJson.addEventListener('click', exportToJson);
-
-    // Live Preview & Save for Display Settings
-    if (elements.settingTileWidth) {
-        elements.settingTileWidth.addEventListener('input', (e) => {
-            elements.tileWidthValue.textContent = e.target.value;
-            // Live preview
-            document.documentElement.style.setProperty('--tile-min-width', `${e.target.value}px`);
-            // Update state temporarily
-            state.settings.tileMinWidth = parseInt(e.target.value, 10);
-        });
-
-        elements.settingTileWidth.addEventListener('change', async (e) => {
-            // Save on finish
-            const newSettings = { ...state.settings, tileMinWidth: parseInt(e.target.value, 10) };
-            await sendMessage({ action: 'saveSettings', settings: newSettings });
-            state.settings = newSettings;
-        });
-    }
-
-    if (elements.settingSaveWidth) {
-        elements.settingSaveWidth.addEventListener('input', (e) => {
-            elements.saveWidthValue.textContent = e.target.value;
-            state.settings.imageSaveWidth = parseInt(e.target.value, 10);
-        });
-
-        elements.settingSaveWidth.addEventListener('change', async (e) => {
-            const newSettings = { ...state.settings, imageSaveWidth: parseInt(e.target.value, 10) };
-            await sendMessage({ action: 'saveSettings', settings: newSettings });
-            state.settings = newSettings;
-        });
-    }
-    elements.btnExportCsv.addEventListener('click', exportToCsv);
-    elements.importFile.addEventListener('change', (e) => {
-        if (e.target.files[0]) {
-            importFromJson(e.target.files[0]);
-        }
-    });
-
-    // Folder Sync
-    elements.btnSelectFolder.addEventListener('click', selectFolder);
-    elements.btnFolderSyncPush.addEventListener('click', pushToFolder);
-    elements.btnFolderSyncPull.addEventListener('click', pullFromFolder);
-    elements.btnFolderUnlink.addEventListener('click', unlinkFolder);
-
-    // Close modals on backdrop click
-    [elements.modalNote, elements.modalCollectionMenu].forEach(modal => {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) hideModal(modal);
-        });
-    });
-
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            hideModal(elements.modalNote);
-            hideModal(elements.modalCollectionMenu);
-        }
-    });
-
-    // Listen for background updates (replaces chrome.storage.onChanged)
-    chrome.runtime.onMessage.addListener((message) => {
-        if (message.action === 'collectionUpdated') {
-            // Reload data when background notifies of changes
-            loadCollections();
-            if (state.currentView === 'detail' && state.currentCollectionId === message.collectionId) {
-                openCollection(state.currentCollectionId);
-            }
-        }
-    });
-}
-
-function toggleLayout() {
-    state.layoutMode = state.layoutMode === 'list' ? 'grid' : 'list';
-    renderItems();
+async function autoSyncPull() {
+    await sendMessage({ action: 'autoSyncPull' });
+    await loadCollections();
 }
 
 // ============================================
@@ -961,19 +383,38 @@ function toggleLayout() {
 // ============================================
 async function init() {
     initElements();
-    setupEventListeners();
-
-    // Add layout toggle listener manually here or in setupEventListeners
-    if (elements.btnLayoutToggle) {
-        elements.btnLayoutToggle.addEventListener('click', toggleLayout);
-    }
+    initEvents({
+        createCollection,
+        renderCollectionsList,
+        addCurrentPage,
+        addNote,
+        openAllLinks,
+        updateCollectionName,
+        saveNote,
+        deleteCurrentCollection,
+        openSettings,
+        exportToJson,
+        saveSettings: (settings) => sendMessage({ action: 'saveSettings', settings }),
+        loadCollections,
+        openCollection,
+        downloadFile,
+        exportToCsv,
+        importFromJson,
+        selectFolder,
+        pushToFolder,
+        pullFromFolder,
+        unlinkFolder,
+        toggleLayout,
+        addItemMemo,
+        renameItem,
+        deleteItem
+    });
 
     await loadSettings();
     await loadCollections();
     await checkFolderSyncStatus();
     showView('list');
 
-    // フォルダが設定済みなら起動時に自動Pull
     autoSyncPull();
 }
 
