@@ -134,6 +134,10 @@ export async function handleMessage(message, setupContextMenus) {
                 await SyncManager.pushToLocalFolder(CollectionStorage);
                 return { success: true };
             } catch (error) {
+                if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
+                    showPermissionNotification();
+                    return { success: false, error: 'PermissionDenied' };
+                }
                 return { success: false, error: error.message };
             }
 
@@ -146,6 +150,10 @@ export async function handleMessage(message, setupContextMenus) {
                 const result = await SyncManager.pullFromLocalFolder(CollectionStorage);
                 return result; // Returns { success: true, updated: boolean }
             } catch (error) {
+                if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
+                    showPermissionNotification();
+                    return { success: false, error: 'PermissionDenied' };
+                }
                 return { success: false, error: error.message };
             }
 

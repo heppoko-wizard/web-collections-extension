@@ -348,8 +348,12 @@ export async function pushToFolder() {
         }
     } catch (error) {
         console.error('Push to folder failed:', error);
-        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ エクスポート失敗';
-        alert('エクスポートに失敗しました: ' + error.message);
+        if (error.message === 'PermissionDenied') {
+            await checkFolderSyncStatus(); // UIを更新して再許可ボタンを出す
+        } else {
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ エクスポート失敗';
+            alert('エクスポートに失敗しました: ' + error.message);
+        }
     }
 }
 
@@ -366,8 +370,12 @@ export async function pullFromFolder() {
         }
     } catch (error) {
         console.error('Pull from folder failed:', error);
-        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ インポート失敗';
-        alert('インポートに失敗しました: ' + error.message);
+        if (error.message === 'PermissionDenied') {
+            await checkFolderSyncStatus(); // UIを更新して再許可ボタンを出す
+        } else {
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ インポート失敗';
+            alert('インポートに失敗しました: ' + error.message);
+        }
     }
 }
 
@@ -432,6 +440,8 @@ export async function autoSyncPull() {
             if (response.success && response.updated) {
                 await loadCollections();
                 console.log('Auto-sync: Pulled from folder and updated UI');
+            } else if (!response.success && response.error === 'PermissionDenied') {
+                await checkFolderSyncStatus(); // UIを更新して再許可ボタンを出す
             }
         }
     } catch (error) {
