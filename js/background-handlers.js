@@ -101,10 +101,12 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'importJson':
             await CollectionStorage.importFromJson(message.data);
+            if (setupContextMenus) setupContextMenus();
             break;
 
         case 'importCollection':
             await CollectionStorage.importCollectionData(message.data);
+            if (setupContextMenus) setupContextMenus();
             break;
 
         case 'getModifiedCollections':
@@ -148,6 +150,9 @@ export async function handleMessage(message, setupContextMenus) {
         case 'autoSyncPull':
             try {
                 const result = await SyncManager.pullFromLocalFolder(CollectionStorage);
+                if (result.success && result.updated && setupContextMenus) {
+                    setupContextMenus();
+                }
                 return result; // Returns { success: true, updated: boolean }
             } catch (error) {
                 if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
