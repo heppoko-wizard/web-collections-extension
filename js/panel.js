@@ -3,18 +3,12 @@
  * コレクションの表示・操作・同期を管理
  */
 
+import { state, updateState, subscribe, notify } from './panel-state.js';
+
 // ============================================
 // State Management
 // ============================================
-const state = {
-    collections: [],
-    currentCollectionId: null,
-    currentItems: [],
-    currentView: 'list', // 'list' | 'detail' | 'settings'
-    layoutMode: 'list', // 'list' | 'grid'
-    settings: {},
-    folderSyncEnabled: false
-};
+// state is now imported from panel-state.js
 
 // Virtual Scroll Constants
 const ITEM_HEIGHT_LIST = 100; // px
