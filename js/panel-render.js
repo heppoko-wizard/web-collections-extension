@@ -5,6 +5,7 @@
  */
 
 import { state } from './panel-state.js';
+import { t } from './i18n-helper.js';
 
 // Constants (copied from panel.js)
 const ITEM_HEIGHT_LIST = 100;
@@ -40,8 +41,8 @@ export function renderCollectionsList(elements, onOpenCollection) {
         container.innerHTML = `
       <div class="empty-state">
         <div class="icon">${ICONS.COLLECTION}</div>
-        <p>コレクションがありません</p>
-        <p>「新しいコレクション」ボタンで作成しましょう</p>
+        <p>${t('emptyCollections')}</p>
+        <p>${t('emptyCollectionsSub')}</p>
       </div>
     `;
         return;
@@ -94,15 +95,15 @@ export function renderItems(elements, setupDragAndDrop) {
     // Update toggle button icon
     if (elements.btnLayoutToggle) {
         elements.btnLayoutToggle.innerHTML = state.layoutMode === 'grid' ? ICONS.LIST : ICONS.GRID;
-        elements.btnLayoutToggle.title = state.layoutMode === 'grid' ? 'リスト表示にする' : 'タイル表示にする';
+        elements.btnLayoutToggle.title = state.layoutMode === 'grid' ? t('layoutList') : t('layoutGrid');
     }
 
     if (!items || items.length === 0) {
         container.innerHTML = `
       <div class="empty-state">
         <div class="icon">${ICONS.PAGE}</div>
-        <p>アイテムがありません</p>
-        <p>ページ上で右クリック→「コレクションに追加」</p>
+        <p>${t('emptyItems')}</p>
+        <p>${t('emptyItemsSub')}</p>
       </div>
     `;
         return;
@@ -192,7 +193,7 @@ export function renderItem(item, index = 0) {
                 ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="${loadingAttr}">`
                 : `<span class="icon">${ICONS.IMAGE}</span>`;
             content = `
-        <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">${escapeHtml(item.title || '画像')}</a></div>
+        <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">${escapeHtml(item.title || t('image'))}</a></div>
         <div class="item-domain">${getDomain(item.sourceUrl || item.url)}</div>
       `;
             break;
@@ -212,7 +213,7 @@ export function renderItem(item, index = 0) {
 
         default:
             thumbContent = `<span class="icon">${ICONS.PAGE}</span>`;
-            content = `<div class="item-title">${escapeHtml(item.title || 'アイテム')}</div>`;
+            content = `<div class="item-title">${escapeHtml(item.title || t('item'))}</div>`;
     }
 
     const memoContent = item.memo
@@ -225,11 +226,11 @@ export function renderItem(item, index = 0) {
       <div class="item-content">${content}${memoContent}</div>
       <div class="item-actions">
         <div class="item-menu-container">
-          <button class="icon-btn btn-item-menu" data-id="${item.id}" title="メニュー">${ICONS.MENU}</button>
+          <button class="icon-btn btn-item-menu" data-id="${item.id}" title="${t('btnCollectionMenuTitle')}">${ICONS.MENU}</button>
           <div class="item-menu-dropdown" data-id="${item.id}">
-            <button class="menu-item btn-add-memo" data-id="${item.id}">${ICONS.MEMO} メモを追加</button>
-            <button class="menu-item btn-rename-item" data-id="${item.id}">${ICONS.RENAME} 名前を変更</button>
-            <button class="menu-item btn-delete-item" data-id="${item.id}">${ICONS.DELETE} 削除</button>
+            <button class="menu-item btn-add-memo" data-id="${item.id}">${ICONS.MEMO} ${t('promptMemo')}</button>
+            <button class="menu-item btn-rename-item" data-id="${item.id}">${ICONS.RENAME} ${t('promptRename')}</button>
+            <button class="menu-item btn-delete-item" data-id="${item.id}">${ICONS.DELETE} ${t('btnDelete')}</button>
           </div>
         </div>
       </div>

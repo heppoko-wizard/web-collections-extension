@@ -1,0 +1,263 @@
+{
+    "appName": {
+        "message": "Web Collections"
+    },
+    "appDesc": {
+        "message": "可通过云端或本地文件夹同步的收藏管理扩展程序。"
+    },
+    "openSidePanel": {
+        "message": "打开收藏"
+    },
+    "contextMenuAddPage": {
+        "message": "将页面添加到收藏"
+    },
+    "contextMenuAddImage": {
+        "message": "将图像添加到收藏"
+    },
+    "contextMenuAddText": {
+        "message": "将所选文本添加到收藏"
+    },
+    "btnNewCollection": {
+        "message": "新建收藏"
+    },
+    "btnSyncAll": {
+        "message": "全量同步"
+    },
+    "btnSettings": {
+        "message": "设置"
+    },
+    "btnBack": {
+        "message": "返回"
+    },
+    "btnAddPage": {
+        "message": "添加当前页面"
+    },
+    "btnAddAllTabs": {
+        "message": "添加所有标签页"
+    },
+    "btnAddNote": {
+        "message": "添加笔记"
+    },
+    "btnOpenAll": {
+        "message": "打开所有链接"
+    },
+    "emptyCollections": {
+        "message": "没有收藏"
+    },
+    "emptyCollectionsSub": {
+        "message": "使用“新建收藏”按钮创建一个"
+    },
+    "emptyItems": {
+        "message": "没有项目"
+    },
+    "emptyItemsSub": {
+        "message": "在页面上右键 -> “添加到收藏”"
+    },
+    "modalCreateTitle": {
+        "message": "创建新收藏"
+    },
+    "placeholderCollectionName": {
+        "message": "输入收藏名称..."
+    },
+    "btnSave": {
+        "message": "保存"
+    },
+    "btnCancel": {
+        "message": "取消"
+    },
+    "modalNoteTitle": {
+        "message": "添加笔记"
+    },
+    "placeholderNote": {
+        "message": "输入笔记..."
+    },
+    "menuDeleteCollection": {
+        "message": "删除此收藏"
+    },
+    "menuExportCollection": {
+        "message": "导出此收藏"
+    },
+    "confirmDeleteCollection": {
+        "message": "确定删除此收藏吗？"
+    },
+    "confirmDeleteItem": {
+        "message": "确定删除此项目吗？"
+    },
+    "confirmAddAllTabs": {
+        "message": "将 $COUNT$ 个标签页添加到此收藏吗？"
+    },
+    "confirmOpenAllLinks": {
+        "message": "打开所有 $COUNT$ 个链接吗？"
+    },
+    "promptRename": {
+        "message": "重命名："
+    },
+    "promptMemo": {
+        "message": "输入笔记："
+    },
+    "syncStatusOk": {
+        "message": "✅ 已獲得文件夹访问权限。"
+    },
+    "syncStatusWarning": {
+        "message": "⚠️ 权限已过期。请“重新授权”。"
+    },
+    "lastSync": {
+        "message": "最后同步：$TIME$"
+    },
+    "syncModeBookmark": {
+        "message": "Chrome 书签 (自动同步)"
+    },
+    "syncModeFolder": {
+        "message": "本地文件夹 (手动/自动)"
+    },
+    "syncHintBookmark": {
+        "message": "书签同步通过 Google 账号自动运行，无需设置。"
+    },
+    "syncHintFolder": {
+        "message": "使用 OneDrive 或 Google Drive 同步文件夹在设备间共享数据。"
+    },
+    "themeLight": {
+        "message": "浅色"
+    },
+    "themeDark": {
+        "message": "深色"
+    },
+    "layoutGrid": {
+        "message": "网格"
+    },
+    "layoutList": {
+        "message": "列表"
+    },
+    "btnGrantPermission": {
+        "message": "重新授权"
+    },
+    "btnUnlink": {
+        "message": "解除"
+    },
+    "btnSelectFolder": {
+        "message": "选择文件夹"
+    },
+    "headerCollections": {
+        "message": "收藏"
+    },
+    "btnSyncAllTitle": {
+        "message": "全量同步"
+    },
+    "btnSettingsTitle": {
+        "message": "设置"
+    },
+    "btnThemeToggleTitle": {
+        "message": "切换主题"
+    },
+    "btnLayoutToggleTitle": {
+        "message": "切换布局"
+    },
+    "btnOpenAllTitle": {
+        "message": "打开所有链接"
+    },
+    "btnBackTitle": {
+        "message": "返回"
+    },
+    "btnCollectionMenuTitle": {
+        "message": "菜单"
+    },
+    "settingsTitle": {
+        "message": "设置"
+    },
+    "displaySettingsTitle": {
+        "message": "显示设置"
+    },
+    "tileWidthLabel": {
+        "message": "网格最小宽度："
+    },
+    "syncSettingsTitle": {
+        "message": "同步设置"
+    },
+    "syncEnabledLabel": {
+        "message": "启用自动同步"
+    },
+    "syncMethodLabel": {
+        "message": "同步方法"
+    },
+    "folderSyncTitle": {
+        "message": "本地文件夹同步"
+    },
+    "folderSyncHint": {
+        "message": "指定 OneDrive 或 Google Drive 同步文件夹以在设备间共享数据。"
+    },
+    "deviceInfoLabel": {
+        "message": "设备信息"
+    },
+    "deviceInfoLoading": {
+        "message": "加载中..."
+    },
+    "btnExportJson": {
+        "message": "导出 JSON"
+    },
+    "btnExportCsv": {
+        "message": "导出 CSV"
+    },
+    "btnImportJson": {
+        "message": "导入 JSON"
+    },
+    "dataManagementTitle": {
+        "message": "数据管理"
+    },
+    "btnExportNow": {
+        "message": "立即导出"
+    },
+    "btnImportNow": {
+        "message": "立即导入"
+    },
+    "btnCreate": {
+        "message": "创建"
+    },
+    "btnDelete": {
+        "message": "删除"
+    },
+    "image": {
+        "message": "图像"
+    },
+    "item": {
+        "message": "项目"
+    },
+    "syncing": {
+        "message": "正在同步..."
+    },
+    "syncSuccess": {
+        "message": "同步完成"
+    },
+    "syncError": {
+        "message": "同步失败"
+    },
+    "exporting": {
+        "message": "正在导出..."
+    },
+    "exportSuccess": {
+        "message": "导出完成"
+    },
+    "exportError": {
+        "message": "导出失败"
+    },
+    "importing": {
+        "message": "正在导入..."
+    },
+    "importSuccess": {
+        "message": "导入完成"
+    },
+    "importError": {
+        "message": "导入失败"
+    },
+    "confirmUnlink": {
+        "message": "确定解除文件夹关联吗？"
+    },
+    "contextMenuMain": {
+        "message": "添加到 Web Collections"
+    },
+    "contextMenuNew": {
+        "message": "创建新收藏..."
+    },
+    "defaultCollectionName": {
+        "message": "我的收藏"
+    }
+}

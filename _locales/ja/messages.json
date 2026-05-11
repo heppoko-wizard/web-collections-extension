@@ -3,7 +3,7 @@
         "message": "Web Collections"
     },
     "appDesc": {
-        "message": "Edge Collectionsの機能を再現し、Google Driveで暗号化同期を行う拡張機能です。"
+        "message": "クラウドやローカルフォルダで同期可能なコレクション管理拡張機能です。"
     },
     "openSidePanel": {
         "message": "コレクションを開く"
@@ -16,5 +16,248 @@
     },
     "contextMenuAddText": {
         "message": "選択テキストをコレクションに追加"
+    },
+    "btnNewCollection": {
+        "message": "新しいコレクション"
+    },
+    "btnSyncAll": {
+        "message": "すべて同期"
+    },
+    "btnSettings": {
+        "message": "設定"
+    },
+    "btnBack": {
+        "message": "戻る"
+    },
+    "btnAddPage": {
+        "message": "現在のページを追加"
+    },
+    "btnAddAllTabs": {
+        "message": "全タブを追加"
+    },
+    "btnAddNote": {
+        "message": "メモを追加"
+    },
+    "btnOpenAll": {
+        "message": "リンクをすべて開く"
+    },
+    "emptyCollections": {
+        "message": "コレクションがありません"
+    },
+    "emptyCollectionsSub": {
+        "message": "「新しいコレクション」ボタンで作成しましょう"
+    },
+    "emptyItems": {
+        "message": "アイテムがありません"
+    },
+    "emptyItemsSub": {
+        "message": "ページ上で右クリック→「コレクションに追加」"
+    },
+    "modalCreateTitle": {
+        "message": "新しいコレクションを作成"
+    },
+    "placeholderCollectionName": {
+        "message": "コレクション名を入力..."
+    },
+    "btnSave": {
+        "message": "保存"
+    },
+    "btnCancel": {
+        "message": "キャンセル"
+    },
+    "modalNoteTitle": {
+        "message": "メモを追加"
+    },
+    "placeholderNote": {
+        "message": "メモを入力..."
+    },
+    "menuDeleteCollection": {
+        "message": "このコレクションを削除"
+    },
+    "menuExportCollection": {
+        "message": "このコレクションをエクスポート"
+    },
+    "confirmDeleteCollection": {
+        "message": "このコレクションを削除しますか？"
+    },
+    "confirmDeleteItem": {
+        "message": "このアイテムを削除しますか？"
+    },
+    "confirmAddAllTabs": {
+        "message": "$COUNT$個のタブをこのコレクションに追加しますか？"
+    },
+    "confirmOpenAllLinks": {
+        "message": "$COUNT$個のリンクをすべて開きますか？"
+    },
+    "promptRename": {
+        "message": "名前を変更:"
+    },
+    "promptMemo": {
+        "message": "メモを入力:"
+    },
+    "syncStatusOk": {
+        "message": "✅ フォルダへのアクセス権限があります。"
+    },
+    "syncStatusWarning": {
+        "message": "⚠️ 権限が切れています。「再許可」を押してください。"
+    },
+    "lastSync": {
+        "message": "最終同期: $TIME$"
+    },
+    "syncModeBookmark": {
+        "message": "Chrome ブックマーク (自動同期)"
+    },
+    "syncModeFolder": {
+        "message": "ローカルフォルダ (手動/自動)"
+    },
+    "syncHintBookmark": {
+        "message": "ブックマーク同期は設定不要で Google アカウント経由で同期されます。"
+    },
+    "syncHintFolder": {
+        "message": "OneDriveやGoogle Driveの同期フォルダを使用して、デバイス間でデータを共有します。"
+    },
+    "themeLight": {
+        "message": "ライト"
+    },
+    "themeDark": {
+        "message": "ダーク"
+    },
+    "layoutGrid": {
+        "message": "タイル"
+    },
+    "layoutList": {
+        "message": "リスト"
+    },
+    "btnGrantPermission": {
+        "message": "再許可"
+    },
+    "btnUnlink": {
+        "message": "解除"
+    },
+    "btnSelectFolder": {
+        "message": "フォルダを選択"
+    },
+    "headerCollections": {
+        "message": "コレクション"
+    },
+    "btnSyncAllTitle": {
+        "message": "同期"
+    },
+    "btnSettingsTitle": {
+        "message": "設定"
+    },
+    "btnThemeToggleTitle": {
+        "message": "テーマ切り替え"
+    },
+    "btnLayoutToggleTitle": {
+        "message": "表示切り替え"
+    },
+    "btnOpenAllTitle": {
+        "message": "すべて開く"
+    },
+    "btnBackTitle": {
+        "message": "戻る"
+    },
+    "btnCollectionMenuTitle": {
+        "message": "メニュー"
+    },
+    "settingsTitle": {
+        "message": "設定"
+    },
+    "displaySettingsTitle": {
+        "message": "表示設定"
+    },
+    "tileWidthLabel": {
+        "message": "タイル表示の最小幅:"
+    },
+    "syncSettingsTitle": {
+        "message": "同期設定"
+    },
+    "syncEnabledLabel": {
+        "message": "自動同期を有効にする"
+    },
+    "syncMethodLabel": {
+        "message": "同期方法"
+    },
+    "folderSyncTitle": {
+        "message": "ローカルフォルダ共有"
+    },
+    "folderSyncHint": {
+        "message": "OneDriveやGoogle Driveの同期フォルダを指定して、デバイス間でデータを共有します。"
+    },
+    "deviceInfoLabel": {
+        "message": "デバイス情報"
+    },
+    "deviceInfoLoading": {
+        "message": "読み込み中..."
+    },
+    "btnExportJson": {
+        "message": "JSONエクスポート"
+    },
+    "btnExportCsv": {
+        "message": "CSVエクスポート"
+    },
+    "btnImportJson": {
+        "message": "JSONインポート"
+    },
+    "dataManagementTitle": {
+        "message": "データ管理"
+    },
+    "btnExportNow": {
+        "message": "今すぐエクスポート"
+    },
+    "btnImportNow": {
+        "message": "今すぐインポート"
+    },
+    "btnCreate": {
+        "message": "作成"
+    },
+    "btnDelete": {
+        "message": "削除"
+    },
+    "image": {
+        "message": "画像"
+    },
+    "item": {
+        "message": "アイテム"
+    },
+    "syncing": {
+        "message": "同期中..."
+    },
+    "syncSuccess": {
+        "message": "同期完了"
+    },
+    "syncError": {
+        "message": "同期失敗"
+    },
+    "exporting": {
+        "message": "エクスポート中..."
+    },
+    "exportSuccess": {
+        "message": "エクスポート完了"
+    },
+    "exportError": {
+        "message": "エクスポート失敗"
+    },
+    "importing": {
+        "message": "インポート中..."
+    },
+    "importSuccess": {
+        "message": "インポート完了"
+    },
+    "importError": {
+        "message": "インポート失敗"
+    },
+    "confirmUnlink": {
+        "message": "フォルダ連携を解除しますか？"
+    },
+    "contextMenuMain": {
+        "message": "Web Collectionsに追加"
+    },
+    "contextMenuNew": {
+        "message": "新しいコレクションを作成..."
+    },
+    "defaultCollectionName": {
+        "message": "マイコレクション"
     }
 }
