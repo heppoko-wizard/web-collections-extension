@@ -5,31 +5,10 @@
 
 import { CollectionStorage } from './storage.js';
 import { handleMessage, executeAutoSyncPush } from './background-handlers.js';
+import { BookmarkSync } from './bookmark-sync.js';
 
 // 拡張機能インストール・更新時の初期化
 chrome.runtime.onInstalled.addListener(async () => {
-    // chrome.storage.local からの自動マイグレーション
-    try {
-        const migrated = await CollectionStorage.migrateFromChromeStorage();
-        if (migrated) {
-            console.log('Data migrated from chrome.storage.local to IndexedDB.');
-        }
-    } catch (error) {
-        console.error('Migration failed:', error);
-    }
-
-    // 設定のマイグレーション
-    try {
-        const settingsResult = await chrome.storage.local.get('settings');
-        if (settingsResult.settings) {
-            await CollectionStorage.saveSettings(settingsResult.settings);
-            await chrome.storage.local.remove('settings');
-            console.log('Settings migrated to IndexedDB.');
-        }
-    } catch (error) {
-        console.error('Settings migration failed:', error);
-    }
-
     setupContextMenus();
     setupAlarms();
     setupBookmarkListeners();
@@ -43,20 +22,45 @@ function setupBookmarkListeners() {
             .catch(err => console.warn('Bookmark Watcher: Sync failed', err));
     };
 
+    const triggerSyncOnMove = async (id, moveInfo) => {
+        await handleBookmarkMoved(id, moveInfo);
+        triggerSync();
+    };
+
     chrome.bookmarks.onCreated.addListener(triggerSync);
     chrome.bookmarks.onChanged.addListener(triggerSync);
-    chrome.bookmarks.onMoved.addListener(triggerSync);
+    chrome.bookmarks.onMoved.addListener(triggerSyncOnMove);
     chrome.bookmarks.onRemoved.addListener(triggerSync);
 }
 
-// 通知クリック時の処理
-chrome.notifications.onClicked.addListener((notificationId) => {
-    if (notificationId === 'sync-permission-required') {
-        // 通知をクリックしたらサイドパネルを開く（可能であれば）
-        // 注: 常に動作するとは限りませんが、インテントとして有用
-        chrome.storage.session.set({ pendingAction: 'openSettings' });
+// ブックマーク移動時の並べ替え検知とメタデータ更新
+async function handleBookmarkMoved(id, moveInfo) {
+    try {
+        // 親フォルダの情報を取得
+        const parent = (await chrome.bookmarks.get(moveInfo.parentId))[0];
+        
+        // コレクションフォルダ（[WC]で始まる）の配下で移動された場合のみ処理
+        if (parent.title.startsWith('[WC]')) {
+            const meta = BookmarkSync.decodeMetadata(parent);
+            if (meta) {
+                // 更新日時を現在時刻にした新しいタイトルを作成
+                const updatedMetaCol = {
+                    id: meta.id,
+                    updatedAt: Date.now(),
+                    memo: meta.memo || ''
+                };
+                const newTitle = BookmarkSync.encodeMetadata(updatedMetaCol, meta.title);
+                
+                // ブックマークフォルダのタイトルを更新（これによって updatedAt が更新される）
+                await chrome.bookmarks.update(moveInfo.parentId, { title: newTitle });
+                console.log('Background Bookmark Watcher: Updated parent collection updatedAt due to move event.');
+            }
+        }
+    } catch (error) {
+        console.warn('Background Bookmark Watcher: Failed to handle move event', error);
     }
-});
+}
+
 
 // 定期実行アラームのセットアップ
 function setupAlarms() {

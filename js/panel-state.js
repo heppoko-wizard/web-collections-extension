@@ -10,8 +10,7 @@ export const state = {
     currentItems: [],
     currentView: 'list', // 'list' | 'detail' | 'settings'
     layoutMode: 'list', // 'list' | 'grid'
-    settings: {},
-    folderSyncEnabled: false
+    settings: {}
 };
 
 const listeners = [];

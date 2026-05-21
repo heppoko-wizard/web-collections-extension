@@ -21,16 +21,10 @@
     "contextMenus",
     "storage",
     "unlimitedStorage",
-    "identity",
     "activeTab",
     "scripting",
-    "notifications",
     "alarms",
     "bookmarks"
-  ],
-  "host_permissions": [
-    "https://www.googleapis.com/*",
-    "<all_urls>"
   ],
   "action": {
     "default_title": "__MSG_openSidePanel__"
@@ -45,11 +39,5 @@
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
-  },
-  "oauth2": {
-    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
-    "scopes": [
-      "https://www.googleapis.com/auth/drive.appdata"
-    ]
   }
 }

@@ -144,9 +144,6 @@ export function renderItems(elements, setupDragAndDrop) {
         scrollContainer.dataset.hasScrollListener = 'true';
     }
 
-    // Setup lazy loading for images
-    setupLazyLoading(container);
-
     // Setup drag and drop
     if (setupDragAndDrop) setupDragAndDrop();
 }
@@ -163,7 +160,7 @@ export function renderItem(item) {
     switch (item.type) {
         case 'webpage':
             thumbContent = item.faviconUrl
-                ? `<img class="lazy-image" data-src="${escapeHtml(item.faviconUrl)}" alt="">`
+                ? `<img src="${escapeHtml(item.faviconUrl)}" alt="" loading="lazy">`
                 : `<span class="icon">${ICONS.PAGE}</span>`;
             content = `
         <div class="item-title"><a href="${escapeHtml(item.url)}" target="_blank">${escapeHtml(item.title || item.url)}</a></div>
@@ -173,7 +170,7 @@ export function renderItem(item) {
 
         case 'image':
             thumbContent = item.imageUrl
-                ? `<img class="lazy-image" data-src="${escapeHtml(item.imageUrl)}" alt="">`
+                ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy">`
                 : `<span class="icon">${ICONS.IMAGE}</span>`;
             content = `
         <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">${escapeHtml(item.title || '画像')}</a></div>
@@ -221,35 +218,7 @@ export function renderItem(item) {
   `;
 }
 
-/**
- * 画像の遅延読み込みの設定（IntersectionObserver による大容量コレクション対応）
- * @param {HTMLElement} container 
- */
-export function setupLazyLoading(container) {
-    const lazyImages = container.querySelectorAll('img.lazy-image');
-    if (lazyImages.length === 0) return;
 
-    const scrollContainer = document.getElementById('items-container');
-
-    const observer = new IntersectionObserver((entries, obs) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                const img = entry.target;
-                if (img.dataset.src) {
-                    img.src = img.dataset.src;
-                    img.removeAttribute('data-src');
-                }
-                img.classList.remove('lazy-image');
-                obs.unobserve(img);
-            }
-        });
-    }, {
-        root: scrollContainer,
-        rootMargin: '8000px 0px 8000px 0px' // 上下に広大な先読みマージンを設定し、高速スクロールに対応
-    });
-
-    lazyImages.forEach(img => observer.observe(img));
-}
 
 // ============================================
 // Utilities

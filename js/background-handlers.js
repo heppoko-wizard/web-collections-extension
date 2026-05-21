@@ -5,21 +5,15 @@
  */
 
 import { CollectionStorage } from './storage.js';
-import { SyncManager } from './sync-manager.js';
-
-let syncTimeout = null;
+import { BookmarkSync } from './bookmark-sync.js';
 
 /**
- * 自動同期をスケジュール（デバウンス）
+ * 自動同期をスケジュール（Service Worker対応）
  */
 async function scheduleAutoSync() {
-    const settings = await CollectionStorage.getSettings();
-    if (!settings.syncEnabled) return;
-
-    // setTimeout は Service Worker のスリープにより中断される可能性があるため、
-    // 本来は chrome.alarms を使うべきだが、5秒という短期間のため
-    // ここではアラーム名で管理する
-    chrome.alarms.create('deferred-auto-sync-push', { delayInMinutes: 0.1 }); // 約6秒後
+    // setTimeout は MV3 Service Worker のサスペンド時に破棄されるため、chrome.alarms を使用する
+    // deferred-auto-sync-push ハンドラは background.js に実装済み
+    chrome.alarms.create('deferred-auto-sync-push', { delayInMinutes: 0.5 });
 }
 
 /**
@@ -28,29 +22,11 @@ async function scheduleAutoSync() {
 export async function executeAutoSyncPush() {
     console.log('Background: Executing scheduled auto-sync...');
     try {
-        await SyncManager.pushToLocalFolder(CollectionStorage);
+        await BookmarkSync.push(CollectionStorage);
         console.log('Background: Auto-sync success');
     } catch (error) {
-        if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
-            console.warn('Background: Sync permission denied. Showing notification.');
-            showPermissionNotification();
-        } else {
-            console.error('Background: Auto-sync failed:', error);
-        }
+        console.error('Background: Auto-sync failed:', error);
     }
-}
-
-/**
- * 権限再取得の通知を表示
- */
-function showPermissionNotification() {
-    chrome.notifications.create('sync-permission-required', {
-        type: 'basic',
-        iconUrl: '/icons/icon128.png',
-        title: '同期の権限が必要です',
-        message: 'ローカルフォルダへのアクセス権限が切れています。サイドパネルを開いて「再許可」をクリックしてください。',
-        priority: 2
-    });
 }
 
 /**
@@ -60,6 +36,10 @@ export async function handleMessage(message, setupContextMenus) {
     let response = { success: true };
 
     switch (message.action) {
+        case 'getBookmarkFolders':
+            response.data = await getBookmarkFolders();
+            break;
+
         case 'getCollections':
             response.data = await CollectionStorage.getAllCollections(message.includeDeleted);
             break;
@@ -144,17 +124,14 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'saveSettings':
             await CollectionStorage.saveSettings(message.settings);
+            scheduleAutoSync();
             break;
 
         case 'syncPush':
             try {
-                await SyncManager.pushToLocalFolder(CollectionStorage);
+                await BookmarkSync.push(CollectionStorage);
                 return { success: true };
             } catch (error) {
-                if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
-                    showPermissionNotification();
-                    return { success: false, error: 'PermissionDenied' };
-                }
                 return { success: false, error: error.message };
             }
 
@@ -164,22 +141,14 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'autoSyncPull':
             try {
-                const result = await SyncManager.pullFromLocalFolder(CollectionStorage);
+                const result = await BookmarkSync.pull(CollectionStorage);
                 if (result.success && result.updated && setupContextMenus) {
                     setupContextMenus();
                 }
                 return result; // Returns { success: true, updated: boolean }
             } catch (error) {
-                if (error.message === 'PermissionDenied' || error.name === 'NotAllowedError') {
-                    showPermissionNotification();
-                    return { success: false, error: 'PermissionDenied' };
-                }
                 return { success: false, error: error.message };
             }
-
-        case 'checkFolderSyncStatus':
-            // パネル側で直接ハンドルを確認するため、ここでは不要だが互換性のために残す
-            return { success: true };
 
         default:
             return { success: false, error: 'Unknown action: ' + message.action };
@@ -187,3 +156,40 @@ export async function handleMessage(message, setupContextMenus) {
 
     return response;
 }
+
+/**
+ * ブックマークフォルダを階層パス付きで再帰的に取得する
+ */
+async function getBookmarkFolders() {
+    if (!chrome.bookmarks) {
+        throw new Error('Bookmarks API is not available. Please reload the extension.');
+    }
+    const tree = await chrome.bookmarks.getTree();
+    const folders = [];
+    
+    function traverse(node, path = '') {
+        if (!node.url) {
+            let nextPath = path;
+            if (node.id !== '0') {
+                let title = node.title;
+                if (node.id === '1') title = 'お気に入りバー';
+                if (node.id === '2') title = 'その他のブックマーク';
+                if (node.id === '3') title = 'モバイルのブックマーク';
+                
+                nextPath = path ? `${path} / ${title}` : title;
+                folders.push({
+                    id: node.id,
+                    title: nextPath
+                });
+            }
+            
+            if (node.children) {
+                node.children.forEach(child => traverse(child, nextPath));
+            }
+        }
+    }
+    
+    tree.forEach(node => traverse(node));
+    return folders;
+}
+

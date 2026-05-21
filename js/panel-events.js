@@ -14,9 +14,11 @@ import { elements, showView, showModal, hideModal } from './panel-ui.js';
 export function initEvents(handlers) {
     // Navigation
     elements.btnThemeToggle.addEventListener('click', handlers.toggleTheme);
-    elements.btnSyncAll.addEventListener('click', handlers.syncAll);
     elements.btnNewCollection.addEventListener('click', handlers.showCreateCollectionModal);
-    elements.btnSettings.addEventListener('click', () => showView('settings'));
+    elements.btnSettings.addEventListener('click', () => {
+        showView('settings');
+        if (handlers.updateSettingsUI) handlers.updateSettingsUI();
+    });
     elements.btnBack.addEventListener('click', () => {
         showView('list');
         handlers.renderCollectionsList();
@@ -55,22 +57,23 @@ export function initEvents(handlers) {
         }
         hideModal(elements.modalCollectionMenu);
     });
+    if (elements.btnCopyCollectionJson) {
+        elements.btnCopyCollectionJson.addEventListener('click', () => {
+            if (handlers.copyCollectionJson) {
+                handlers.copyCollectionJson();
+            }
+        });
+    }
     elements.btnMenuCancel.addEventListener('click', () => hideModal(elements.modalCollectionMenu));
 
     // Settings
-    if (elements.btnGrantPermission) {
-        elements.btnGrantPermission.addEventListener('click', handlers.grantFolderPermission);
+    if (elements.btnImportPaste) {
+        elements.btnImportPaste.addEventListener('click', () => {
+            if (handlers.importFromText) {
+                handlers.importFromText();
+            }
+        });
     }
-    if (elements.btnSyncNow) {
-        elements.btnSyncNow.addEventListener('click', handlers.autoSyncPull);
-    }
-    elements.btnExportJson.addEventListener('click', handlers.exportToJson);
-    elements.btnExportCsv.addEventListener('click', handlers.exportToCsv);
-    elements.importFile.addEventListener('change', (e) => {
-        if (e.target.files[0] && handlers.importFromJson) {
-            handlers.importFromJson(e.target.files[0]);
-        }
-    });
 
     // Display Settings
     if (elements.settingTileWidth) {
@@ -86,17 +89,13 @@ export function initEvents(handlers) {
         });
     }
 
-    // Folder Sync
-    elements.btnSelectFolder.addEventListener('click', handlers.selectFolder);
-    elements.btnFolderSyncPush.addEventListener('click', () => handlers.pushToFolder());
-    elements.btnFolderSyncPull.addEventListener('click', () => handlers.pullFromFolder());
-    elements.btnFolderUnlink.addEventListener('click', handlers.unlinkFolder);
-
-    if (elements.settingSyncEnabled) {
-        elements.settingSyncEnabled.addEventListener('change', handlers.saveSyncSettings);
-    }
-    if (elements.settingSyncMode) {
-        elements.settingSyncMode.addEventListener('change', handlers.saveSyncSettings);
+    if (elements.settingBookmarkRoot) {
+        elements.settingBookmarkRoot.addEventListener('change', async (e) => {
+            const newSettings = { ...state.settings, bookmarkRootId: e.target.value };
+            state.settings.bookmarkRootId = e.target.value;
+            if (handlers.saveSettings) await handlers.saveSettings(newSettings);
+            if (handlers.syncPush) await handlers.syncPush();
+        });
     }
 
     // Close modals on backdrop click

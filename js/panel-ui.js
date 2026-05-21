@@ -23,7 +23,6 @@ export function initElements() {
 
     // Buttons
     elements.btnThemeToggle = document.getElementById('btn-theme-toggle');
-    elements.btnSyncAll = document.getElementById('btn-sync-all');
     elements.iconSun = document.getElementById('icon-sun');
     elements.iconMoon = document.getElementById('icon-moon');
     elements.btnNewCollection = document.getElementById('btn-new-collection');
@@ -38,30 +37,14 @@ export function initElements() {
     elements.btnLayoutToggle = document.getElementById('btn-layout-toggle');
 
     // Settings
-    elements.btnGrantPermission = document.getElementById('btn-grant-permission');
-    elements.btnSyncNow = document.getElementById('btn-sync-now'); // Keep for autoSyncPull proxy if needed, but we'll use folder buttons
     elements.lastSyncTime = document.getElementById('last-sync-time');
-    elements.btnExportJson = document.getElementById('btn-export-json');
-    elements.btnExportCsv = document.getElementById('btn-export-csv');
-    elements.importFile = document.getElementById('import-file');
-
-    // Folder Sync Elements
-    elements.btnSelectFolder = document.getElementById('btn-select-folder');
-    elements.selectedFolderInfo = document.getElementById('selected-folder-info');
-    elements.folderSyncActions = document.getElementById('folder-sync-actions');
-    elements.btnFolderSyncPush = document.getElementById('btn-folder-sync-push');
-    elements.btnFolderSyncPull = document.getElementById('btn-folder-sync-pull');
-    elements.btnFolderUnlink = document.getElementById('btn-folder-unlink');
-    elements.folderSyncStatus = document.getElementById('folder-sync-status');
+    elements.importJsonTextarea = document.getElementById('import-json-textarea');
+    elements.btnImportPaste = document.getElementById('btn-import-paste');
 
     // Settings Inputs
     elements.settingTileWidth = document.getElementById('setting-tile-width');
     elements.tileWidthValue = document.getElementById('tile-width-value');
-    elements.displayDeviceName = document.getElementById('display-device-name');
-    elements.settingSyncEnabled = document.getElementById('setting-sync-enabled');
-    elements.settingSyncMode = document.getElementById('setting-sync-mode');
-    elements.sectionFolderSync = document.getElementById('section-folder-sync');
-    elements.syncModeHint = document.getElementById('sync-mode-hint');
+    elements.settingBookmarkRoot = document.getElementById('setting-bookmark-root');
 
     // Modals
     elements.modalCreateCollection = document.getElementById('modal-create-collection');
@@ -76,6 +59,7 @@ export function initElements() {
     elements.modalCollectionMenu = document.getElementById('modal-collection-menu');
     elements.btnDeleteCollection = document.getElementById('btn-delete-collection');
     elements.btnExportCollection = document.getElementById('btn-export-collection');
+    elements.btnCopyCollectionJson = document.getElementById('btn-copy-collection-json');
     elements.btnMenuCancel = document.getElementById('btn-menu-cancel');
 }
 

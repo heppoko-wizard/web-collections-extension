@@ -1,55 +1,27 @@
 /**
- * storage.js - IndexedDBベースのストレージ管理モジュール
+ * storage.js - chrome.storage.localベースのストレージ管理モジュール
  * コレクションデータのCRUD操作を提供
- * 
- * DB構造:
- *   collections ストア: {id, name, createdAt, updatedAt} メタデータのみ
- *   items ストア: {id, collectionId, type, title, url, content, imageUrl, ...} インデックス: collectionId
- *   settings ストア: key-valueペア
  */
 
 export const CollectionStorage = {
-    DB_NAME: 'WebCollectionsDB',
-    DB_VERSION: 1,
-    _db: null,
+    // 互換性のためのダミー定義
+    async openDB() {
+        return null;
+    },
 
     /**
-     * データベースを開く（初回はスキーマを作成）
-     * @returns {Promise<IDBDatabase>}
+     * ヘルパー：データを取得する
      */
-    async openDB() {
-        if (this._db) return this._db;
+    async _getCollectionsRaw() {
+        const result = await chrome.storage.local.get('wc_collections');
+        return result.wc_collections || [];
+    },
 
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
-
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-
-                // collections ストア: メタデータのみ
-                if (!db.objectStoreNames.contains('collections')) {
-                    db.createObjectStore('collections', { keyPath: 'id' });
-                }
-
-                // items ストア: collectionId インデックス付き
-                if (!db.objectStoreNames.contains('items')) {
-                    const itemStore = db.createObjectStore('items', { keyPath: 'id' });
-                    itemStore.createIndex('collectionId', 'collectionId', { unique: false });
-                }
-
-                // settings ストア: key-value
-                if (!db.objectStoreNames.contains('settings')) {
-                    db.createObjectStore('settings');
-                }
-            };
-
-            request.onsuccess = (event) => {
-                this._db = event.target.result;
-                resolve(this._db);
-            };
-
-            request.onerror = () => reject(request.error);
-        });
+    /**
+     * ヘルパー：データを保存する
+     */
+    async _saveCollectionsRaw(collections) {
+        await chrome.storage.local.set({ wc_collections: collections });
     },
 
     /**
@@ -58,61 +30,29 @@ export const CollectionStorage = {
      * @returns {Promise<Array>} コレクション配列（各要素にitemCountを付与）
      */
     async getAllCollections(includeDeleted = false) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['collections', 'items'], 'readonly');
-            const collectionStore = tx.objectStore('collections');
-            const itemStore = tx.objectStore('items');
-            const collectionIdIndex = itemStore.index('collectionId');
+        const collections = await this._getCollectionsRaw();
+        let filtered = collections;
+        if (!includeDeleted) {
+            filtered = collections.filter(c => !c.isDeleted);
+        }
 
-            const collectionsReq = collectionStore.getAll();
+        // updatedAt の降順でソート（最新を一番上へ）
+        filtered.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-            collectionsReq.onsuccess = () => {
-                let collections = collectionsReq.result;
-                if (!includeDeleted) {
-                    collections = collections.filter(c => !c.isDeleted);
-                }
-                
-                // updatedAt の降順でソート（最新を一番上へ）
-                collections.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                
-                let pending = collections.length;
+        // メタデータのみを返す（各要素に itemCount と firstImage を付与、items は含めない）
+        return filtered.map(col => {
+            const activeItems = (col.items || []).filter(item => !item.isDeleted);
+            const firstImage = activeItems.find(item => item.type === 'image' || item.imageUrl) || null;
 
-                if (pending === 0) {
-                    resolve([]);
-                    return;
-                }
-
-                collections.forEach((col) => {
-                    const countReq = collectionIdIndex.count(IDBKeyRange.only(col.id));
-                    countReq.onsuccess = () => {
-                        col.itemCount = countReq.result;
-                        // 最初のimage型アイテムをサムネイル用に取得
-                        const cursorReq = collectionIdIndex.openCursor(IDBKeyRange.only(col.id));
-                        col.firstImage = null;
-                        cursorReq.onsuccess = (e) => {
-                            const cursor = e.target.result;
-                            if (cursor) {
-                                const item = cursor.value;
-                                if (!item.isDeleted && (item.type === 'image' || item.imageUrl) && !col.firstImage) {
-                                    col.firstImage = item;
-                                }
-                                if (!col.firstImage) {
-                                    cursor.continue();
-                                } else {
-                                    pending--;
-                                    if (pending === 0) resolve(collections);
-                                }
-                            } else {
-                                pending--;
-                                if (pending === 0) resolve(collections);
-                            }
-                        };
-                    };
-                });
+            return {
+                id: col.id,
+                name: col.name,
+                createdAt: col.createdAt,
+                updatedAt: col.updatedAt,
+                isDeleted: col.isDeleted || false,
+                itemCount: activeItems.length,
+                firstImage: firstImage
             };
-
-            collectionsReq.onerror = () => reject(collectionsReq.error);
         });
     },
 
@@ -122,26 +62,29 @@ export const CollectionStorage = {
      * @returns {Promise<object>} 作成されたコレクション
      */
     async createCollection(name) {
-        const db = await this.openDB();
+        const collections = await this._getCollectionsRaw();
         const newCollection = {
             id: this.generateId(),
             name: name || '新しいコレクション',
             createdAt: Date.now(),
-            updatedAt: Date.now()
+            updatedAt: Date.now(),
+            isDeleted: false,
+            items: []
         };
 
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('collections', 'readwrite');
-            const store = tx.objectStore('collections');
-            const request = store.add(newCollection);
-            request.onsuccess = () => {
-                newCollection.itemCount = 0;
-                newCollection.firstImage = null;
-                newCollection.items = [];
-                resolve(newCollection);
-            };
-            request.onerror = () => reject(request.error);
-        });
+        collections.push(newCollection);
+        await this._saveCollectionsRaw(collections);
+
+        return {
+            id: newCollection.id,
+            name: newCollection.name,
+            createdAt: newCollection.createdAt,
+            updatedAt: newCollection.updatedAt,
+            isDeleted: false,
+            itemCount: 0,
+            firstImage: null,
+            items: []
+        };
     },
 
     /**
@@ -150,14 +93,18 @@ export const CollectionStorage = {
      * @returns {Promise<object|null>}
      */
     async getCollection(id) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('collections', 'readonly');
-            const store = tx.objectStore('collections');
-            const request = store.get(id);
-            request.onsuccess = () => resolve(request.result || null);
-            request.onerror = () => reject(request.error);
-        });
+        const collections = await this._getCollectionsRaw();
+        const col = collections.find(c => c.id === id);
+        if (!col) return null;
+        
+        // メタデータのみを返す
+        return {
+            id: col.id,
+            name: col.name,
+            createdAt: col.createdAt,
+            updatedAt: col.updatedAt,
+            isDeleted: col.isDeleted || false
+        };
     },
 
     /**
@@ -166,21 +113,17 @@ export const CollectionStorage = {
      * @param {object} updates
      */
     async updateCollection(id, updates) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('collections', 'readwrite');
-            const store = tx.objectStore('collections');
-            const getReq = store.get(id);
-            getReq.onsuccess = () => {
-                const existing = getReq.result;
-                if (existing) {
-                    const updated = { ...existing, ...updates, updatedAt: Date.now() };
-                    store.put(updated);
-                }
-                resolve();
-            };
-            getReq.onerror = () => reject(getReq.error);
-        });
+        const collections = await this._getCollectionsRaw();
+        const colIndex = collections.findIndex(c => c.id === id);
+        if (colIndex === -1) return;
+
+        collections[colIndex] = {
+            ...collections[colIndex],
+            ...updates,
+            updatedAt: Date.now()
+        };
+
+        await this._saveCollectionsRaw(collections);
     },
 
     /**
@@ -188,25 +131,7 @@ export const CollectionStorage = {
      * @param {string} id
      */
     async deleteCollection(id) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('collections', 'readwrite');
-            const store = tx.objectStore('collections');
-            const getReq = store.get(id);
-
-            getReq.onsuccess = () => {
-                const data = getReq.result;
-                if (data) {
-                    const updated = { ...data, isDeleted: true, updatedAt: Date.now() };
-                    const putReq = store.put(updated);
-                    putReq.onsuccess = () => resolve();
-                    putReq.onerror = () => reject(putReq.error);
-                } else {
-                    resolve();
-                }
-            };
-            getReq.onerror = () => reject(getReq.error);
-        });
+        await this.updateCollection(id, { isDeleted: true });
     },
 
     /**
@@ -216,22 +141,17 @@ export const CollectionStorage = {
      * @returns {Promise<Array>} アイテム配列
      */
     async getItemsByCollection(collectionId, includeDeleted = false) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('items', 'readonly');
-            const store = tx.objectStore('items');
-            const index = store.index('collectionId');
-            const request = index.getAll(IDBKeyRange.only(collectionId));
-            request.onsuccess = () => {
-                let items = request.result;
-                if (!includeDeleted) {
-                    items = items.filter(i => !i.isDeleted);
-                }
-                items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-                resolve(items);
-            };
-            request.onerror = () => reject(request.error);
-        });
+        const collections = await this._getCollectionsRaw();
+        const col = collections.find(c => c.id === collectionId);
+        if (!col) return [];
+
+        let items = col.items || [];
+        if (!includeDeleted) {
+            items = items.filter(i => !i.isDeleted);
+        }
+
+        items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+        return items;
     },
 
     /**
@@ -241,52 +161,33 @@ export const CollectionStorage = {
      * @returns {Promise<object>} 追加されたアイテム
      */
     async addItem(collectionId, item) {
-        const db = await this.openDB();
+        const collections = await this._getCollectionsRaw();
+        const colIndex = collections.findIndex(c => c.id === collectionId);
+        if (colIndex === -1) throw new Error('Collection not found');
 
+        const col = collections[colIndex];
         const newItem = {
             id: this.generateId(),
             collectionId: collectionId,
             ...item,
             savedAt: Date.now(),
             sortOrder: 0,
-            updatedAt: Date.now()
+            updatedAt: Date.now(),
+            isDeleted: false
         };
 
         // 既存アイテムのsortOrderを+1して新アイテムを先頭に挿入
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['items', 'collections'], 'readwrite');
-            const itemStore = tx.objectStore('items');
-            const collectionStore = tx.objectStore('collections');
-            const index = itemStore.index('collectionId');
-
-            // 既存アイテムのsortOrderをインクリメント
-            const cursorReq = index.openCursor(IDBKeyRange.only(collectionId));
-            cursorReq.onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor) {
-                    const record = cursor.value;
-                    record.sortOrder = (record.sortOrder ?? 0) + 1;
-                    cursor.update(record);
-                    cursor.continue();
-                }
-            };
-
-            // 新アイテムをsortOrder 0で追加
-            itemStore.add(newItem);
-
-            // コレクションのupdatedAtを更新
-            const colReq = collectionStore.get(collectionId);
-            colReq.onsuccess = () => {
-                const col = colReq.result;
-                if (col) {
-                    col.updatedAt = Date.now();
-                    collectionStore.put(col);
-                }
-            };
-
-            tx.oncomplete = () => resolve(newItem);
-            tx.onerror = () => reject(tx.error);
+        const items = col.items || [];
+        items.forEach(record => {
+            record.sortOrder = (record.sortOrder ?? 0) + 1;
         });
+
+        items.push(newItem);
+        col.items = items;
+        col.updatedAt = Date.now();
+
+        await this._saveCollectionsRaw(collections);
+        return newItem;
     },
 
     /**
@@ -295,36 +196,19 @@ export const CollectionStorage = {
      * @param {string} itemId
      */
     async removeItem(collectionId, itemId) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['items', 'collections'], 'readwrite');
-            const itemStore = tx.objectStore('items');
-            const collectionStore = tx.objectStore('collections');
+        const collections = await this._getCollectionsRaw();
+        const colIndex = collections.findIndex(c => c.id === collectionId);
+        if (colIndex === -1) return;
 
-            const getReq = itemStore.get(itemId);
-            getReq.onsuccess = () => {
-                const item = getReq.result;
-                if (item) {
-                    item.isDeleted = true;
-                    item.updatedAt = Date.now();
-                    itemStore.put(item);
-
-                    // コレクションのupdatedAtも更新
-                    const colReq = collectionStore.get(collectionId);
-                    colReq.onsuccess = () => {
-                        const col = colReq.result;
-                        if (col) {
-                            col.updatedAt = Date.now();
-                            collectionStore.put(col);
-                        }
-                    };
-                }
-                resolve();
-            };
-            getReq.onerror = () => reject(getReq.error);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
+        const col = collections[colIndex];
+        const items = col.items || [];
+        const itemIndex = items.findIndex(i => i.id === itemId);
+        if (itemIndex !== -1) {
+            items[itemIndex].isDeleted = true;
+            items[itemIndex].updatedAt = Date.now();
+            col.updatedAt = Date.now();
+            await this._saveCollectionsRaw(collections);
+        }
     },
 
     /**
@@ -333,36 +217,22 @@ export const CollectionStorage = {
      * @param {Array<string>} itemIds - 新しい順序のアイテムID配列
      */
     async reorderItems(collectionId, itemIds) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['items', 'collections'], 'readwrite');
-            const itemStore = tx.objectStore('items');
-            const collectionStore = tx.objectStore('collections');
+        const collections = await this._getCollectionsRaw();
+        const colIndex = collections.findIndex(c => c.id === collectionId);
+        if (colIndex === -1) return;
 
-            itemIds.forEach((id, index) => {
-                const getReq = itemStore.get(id);
-                getReq.onsuccess = () => {
-                    const item = getReq.result;
-                    if (item) {
-                        item.sortOrder = index;
-                        itemStore.put(item);
-                    }
-                };
-            });
+        const col = collections[colIndex];
+        const items = col.items || [];
 
-            // コレクションのupdatedAtを更新
-            const colReq = collectionStore.get(collectionId);
-            colReq.onsuccess = () => {
-                const col = colReq.result;
-                if (col) {
-                    col.updatedAt = Date.now();
-                    collectionStore.put(col);
-                }
-            };
-
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+        itemIds.forEach((id, index) => {
+            const item = items.find(i => i.id === id);
+            if (item) {
+                item.sortOrder = index;
+            }
         });
+
+        col.updatedAt = Date.now();
+        await this._saveCollectionsRaw(collections);
     },
 
     /**
@@ -372,37 +242,26 @@ export const CollectionStorage = {
      * @param {object} updates - 更新データ
      */
     async updateItem(collectionId, itemId, updates) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['items', 'collections'], 'readwrite');
-            const itemStore = tx.objectStore('items');
-            const collectionStore = tx.objectStore('collections');
+        const collections = await this._getCollectionsRaw();
+        const colIndex = collections.findIndex(c => c.id === collectionId);
+        if (colIndex === -1) throw new Error('Collection not found');
 
-            const getReq = itemStore.get(itemId);
-            getReq.onsuccess = () => {
-                const existing = getReq.result;
-                if (!existing) {
-                    reject(new Error('Item not found'));
-                    return;
-                }
-                const updated = { ...existing, ...updates, updatedAt: Date.now() };
-                itemStore.put(updated);
+        const col = collections[colIndex];
+        const items = col.items || [];
+        const itemIndex = items.findIndex(i => i.id === itemId);
+        if (itemIndex === -1) throw new Error('Item not found');
 
-                // コレクションのupdatedAtを更新
-                const colReq = collectionStore.get(collectionId);
-                colReq.onsuccess = () => {
-                    const col = colReq.result;
-                    if (col) {
-                        col.updatedAt = Date.now();
-                        collectionStore.put(col);
-                    }
-                };
+        const updated = {
+            ...items[itemIndex],
+            ...updates,
+            updatedAt: Date.now()
+        };
 
-                tx.oncomplete = () => resolve(updated);
-            };
-            getReq.onerror = () => reject(getReq.error);
-            tx.onerror = () => reject(tx.error);
-        });
+        items[itemIndex] = updated;
+        col.updatedAt = Date.now();
+
+        await this._saveCollectionsRaw(collections);
+        return updated;
     },
 
     /**
@@ -410,21 +269,10 @@ export const CollectionStorage = {
      * @returns {Promise<object>}
      */
     async getSettings() {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('settings', 'readonly');
-            const store = tx.objectStore('settings');
-            const request = store.get('app_settings');
-            request.onsuccess = () => {
-                resolve(request.result || {
-                    syncEnabled: false,
-                    syncPassword: '',
-                    syncMode: 'folder', // 'folder' or 'bookmark'
-                    lastSyncTime: null
-                });
-            };
-            request.onerror = () => reject(request.error);
-        });
+        const result = await chrome.storage.local.get('wc_settings');
+        return result.wc_settings || {
+            lastSyncTime: null
+        };
     },
 
     /**
@@ -432,14 +280,9 @@ export const CollectionStorage = {
      * @param {object} settings
      */
     async saveSettings(settings) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('settings', 'readwrite');
-            const store = tx.objectStore('settings');
-            const request = store.put(settings, 'app_settings');
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
+        // syncPassword や syncMode が含まれている場合は除外して保存する
+        const { syncPassword, syncMode, ...cleanSettings } = settings;
+        await chrome.storage.local.set({ wc_settings: cleanSettings });
     },
 
     /**
@@ -457,30 +300,21 @@ export const CollectionStorage = {
      * @returns {Promise<string>}
      */
     async exportToJson() {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['collections', 'items'], 'readonly');
-            const collectionStore = tx.objectStore('collections');
-            const itemStore = tx.objectStore('items');
-
-            const collectionsReq = collectionStore.getAll();
-            const itemsReq = itemStore.getAll();
-
-            tx.oncomplete = () => {
-                const collections = collectionsReq.result;
-                const allItems = itemsReq.result;
-
-                // 旧フォーマット互換: 各コレクションにitemsを埋め込む
-                collections.forEach(col => {
-                    col.items = allItems
-                        .filter(item => item.collectionId === col.id)
-                        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-                });
-
-                resolve(JSON.stringify({ collections, exportedAt: Date.now() }, null, 2));
+        const collections = await this._getCollectionsRaw();
+        // エクスポートデータでは、items も含んだものを返す
+        const exportedData = collections.map(col => {
+            const items = (col.items || []).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+            return {
+                id: col.id,
+                name: col.name,
+                createdAt: col.createdAt,
+                updatedAt: col.updatedAt,
+                isDeleted: col.isDeleted || false,
+                items: items
             };
-            tx.onerror = () => reject(tx.error);
         });
+
+        return JSON.stringify({ collections: exportedData, exportedAt: Date.now() }, null, 2);
     },
 
     /**
@@ -493,110 +327,36 @@ export const CollectionStorage = {
             throw new Error('Invalid import data format');
         }
 
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['collections', 'items'], 'readwrite');
-            const collectionStore = tx.objectStore('collections');
-            const itemStore = tx.objectStore('items');
+        const newCollections = data.collections.map(col => {
+            const items = col.items || [];
+            const formattedItems = items.map((item, index) => ({
+                ...item,
+                collectionId: col.id,
+                sortOrder: item.sortOrder ?? index,
+                updatedAt: item.updatedAt || item.savedAt || Date.now(),
+                isDeleted: item.isDeleted || false
+            }));
 
-            // 既存データをクリア
-            collectionStore.clear();
-            itemStore.clear();
-
-            data.collections.forEach(col => {
-                const items = col.items || [];
-                // コレクションメタデータのみ保存
-                const colMeta = {
-                    id: col.id,
-                    name: col.name,
-                    createdAt: col.createdAt || Date.now(),
-                    updatedAt: col.updatedAt || Date.now()
-                };
-                collectionStore.put(colMeta);
-
-                // アイテムを個別にitemsストアに保存
-                items.forEach((item, index) => {
-                    const itemRecord = {
-                        ...item,
-                        collectionId: col.id,
-                        sortOrder: item.sortOrder ?? index,
-                        updatedAt: item.updatedAt || item.savedAt || Date.now()
-                    };
-                    itemStore.put(itemRecord);
-                });
-            });
-
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
-    },
-
-    /**
-     * chrome.storage.local からデータをマイグレーション
-     * @returns {Promise<boolean>} マイグレーションが実行されたらtrue
-     */
-    async migrateFromChromeStorage() {
-        const result = await chrome.storage.local.get('collections');
-        const collections = result.collections;
-
-        if (!collections || !Array.isArray(collections) || collections.length === 0) {
-            return false;
-        }
-
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['collections', 'items'], 'readwrite');
-            const collectionStore = tx.objectStore('collections');
-            const itemStore = tx.objectStore('items');
-
-            collections.forEach(col => {
-                const items = col.items || [];
-                // コレクションメタデータ
-                const colMeta = {
-                    id: col.id,
-                    name: col.name,
-                    createdAt: col.createdAt || Date.now(),
-                    updatedAt: col.updatedAt || Date.now()
-                };
-                collectionStore.put(colMeta);
-
-                // アイテムを個別保存
-                items.forEach((item, index) => {
-                    const itemRecord = {
-                        ...item,
-                        collectionId: col.id,
-                        sortOrder: item.sortOrder ?? index,
-                        updatedAt: item.savedAt || Date.now()
-                    };
-                    itemStore.put(itemRecord);
-                });
-            });
-
-            tx.oncomplete = async () => {
-                // マイグレーション完了後、旧データを削除
-                await chrome.storage.local.remove('collections');
-                console.log('Migration from chrome.storage.local completed.');
-                resolve(true);
+            return {
+                id: col.id,
+                name: col.name,
+                createdAt: col.createdAt || Date.now(),
+                updatedAt: col.updatedAt || Date.now(),
+                isDeleted: col.isDeleted || false,
+                items: formattedItems
             };
-            tx.onerror = () => reject(tx.error);
         });
+
+        await this._saveCollectionsRaw(newCollections);
     },
+
     /**
      * 指定された時刻以降に変更されたコレクションを取得
      * @param {number} since
      */
     async getModifiedCollections(since) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('collections', 'readonly');
-            const store = tx.objectStore('collections');
-            const request = store.getAll();
-            request.onsuccess = () => {
-                const all = request.result;
-                resolve(all.filter(c => (c.updatedAt || 0) > since));
-            };
-            request.onerror = () => reject(request.error);
-        });
+        const collections = await this._getCollectionsRaw();
+        return collections.filter(c => (c.updatedAt || 0) > since);
     },
 
     /**
@@ -604,13 +364,21 @@ export const CollectionStorage = {
      * @param {string} id
      */
     async exportCollection(id) {
-        const collection = await this.getCollection(id);
-        if (!collection) return null;
+        const collections = await this._getCollectionsRaw();
+        const col = collections.find(c => c.id === id);
+        if (!col) return null;
 
-        const items = await this.getItemsByCollection(id);
+        const items = (col.items || [])
+            .filter(i => !i.isDeleted)
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
         return {
-            ...collection,
-            items
+            id: col.id,
+            name: col.name,
+            createdAt: col.createdAt,
+            updatedAt: col.updatedAt,
+            isDeleted: col.isDeleted || false,
+            items: items
         };
     },
 
@@ -619,44 +387,30 @@ export const CollectionStorage = {
      * @param {object} data
      */
     async importCollectionData(data) {
-        const db = await this.openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(['collections', 'items'], 'readwrite');
-            const collectionStore = tx.objectStore('collections');
-            const itemStore = tx.objectStore('items');
+        const collections = await this._getCollectionsRaw();
+        const colIndex = collections.findIndex(c => c.id === data.id);
 
-            // コレクションメタデータ保存
-            const colMeta = {
-                id: data.id,
-                name: data.name,
-                createdAt: data.createdAt,
-                updatedAt: data.updatedAt,
-                isDeleted: data.isDeleted || false
-            };
-            collectionStore.put(colMeta);
+        const newItems = (data.items || []).map(item => ({
+            ...item,
+            collectionId: data.id
+        }));
 
-            // アイテム保存（既存を削除してから追加）
-            const index = itemStore.index('collectionId');
-            const cursorReq = index.openCursor(IDBKeyRange.only(data.id));
-            cursorReq.onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor) {
-                    cursor.delete();
-                    cursor.continue();
-                } else {
-                    // 古いアイテムの削除が終わってから新しいアイテムを追加
-                    if (data.items && Array.isArray(data.items)) {
-                        data.items.forEach(item => {
-                            itemStore.put({ ...item, collectionId: data.id });
-                        });
-                    }
-                }
-            };
-            cursorReq.onerror = () => reject(cursorReq.error);
+        const importedCol = {
+            id: data.id,
+            name: data.name,
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+            isDeleted: data.isDeleted || false,
+            items: newItems
+        };
 
-            tx.oncomplete = () => resolve(true);
-            tx.onerror = () => reject(tx.error);
-        });
+        if (colIndex !== -1) {
+            collections[colIndex] = importedCol;
+        } else {
+            collections.push(importedCol);
+        }
+
+        await this._saveCollectionsRaw(collections);
+        return true;
     }
 };
-

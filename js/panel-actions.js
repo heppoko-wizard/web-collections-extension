@@ -8,10 +8,7 @@
 import { state, updateState } from './panel-state.js';
 import * as Render from './panel-render.js';
 import { elements, showView, showModal, hideModal } from './panel-ui.js';
-import { migrateDataToUUIDs, purgeBase64Images } from './migration.js';
-import { FolderSync } from './folder-sync.js';
 import { initDragDrop } from './panel-dragdrop.js';
-import { DeviceManager } from './device-manager.js';
 
 // Message API Helper
 async function sendMessage(message) {
@@ -311,64 +308,48 @@ export async function updateSettingsUI() {
     const response = await sendMessage({ action: 'getSettings' });
     const settings = response.data || {};
     
-    if (settings.lastSyncTime) {
-        const date = new Date(settings.lastSyncTime);
-        elements.lastSyncTime.textContent = `最終同期: ${date.toLocaleString('ja-JP')}`;
-    } else {
-        elements.lastSyncTime.textContent = '';
+    if (elements.lastSyncTime) {
+        if (settings.lastSyncTime) {
+            const date = new Date(settings.lastSyncTime);
+            elements.lastSyncTime.textContent = `最終同期: ${date.toLocaleString('ja-JP')}`;
+        } else {
+            elements.lastSyncTime.textContent = '';
+        }
     }
 
     if (elements.settingTileWidth) {
         const tileWidth = settings.tileMinWidth || 140;
         elements.settingTileWidth.value = tileWidth;
-        elements.tileWidthValue.textContent = tileWidth;
+        if (elements.tileWidthValue) {
+            elements.tileWidthValue.textContent = tileWidth;
+        }
     }
 
-    // デバイス名の表示
-    if (elements.displayDeviceName) {
-        const deviceInfo = await DeviceManager.getDeviceInfo();
-        elements.displayDeviceName.textContent = `${deviceInfo.deviceName} (${deviceInfo.deviceId})`;
-    }
+    if (elements.settingBookmarkRoot) {
+        const folderResponse = await sendMessage({ action: 'getBookmarkFolders' });
+        if (folderResponse.success) {
+            elements.settingBookmarkRoot.innerHTML = '';
+            
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = '[WC] Web Collections (デフォルト)';
+            elements.settingBookmarkRoot.appendChild(defaultOpt);
 
-    // 同期設定の表示
-    if (elements.settingSyncEnabled) {
-        elements.settingSyncEnabled.checked = settings.syncEnabled || false;
-    }
-    if (elements.settingSyncMode) {
-        elements.settingSyncMode.value = settings.syncMode || 'folder';
-        updateSyncModeUI(settings.syncMode || 'folder');
+            folderResponse.data.forEach(folder => {
+                const opt = document.createElement('option');
+                opt.value = folder.id;
+                opt.textContent = folder.title;
+                if (settings.bookmarkRootId === folder.id) {
+                    opt.selected = true;
+                }
+                elements.settingBookmarkRoot.appendChild(opt);
+            });
+        } else {
+            console.error('Failed to load bookmark folders:', folderResponse.error);
+        }
     }
 
     applyDisplaySettings();
-}
-
-function updateSyncModeUI(mode) {
-    if (mode === 'folder') {
-        elements.sectionFolderSync.style.display = 'block';
-        elements.syncModeHint.textContent = 'OneDriveやGoogle Driveの同期フォルダを使用して、デバイス間でデータを共有します。';
-    } else {
-        elements.sectionFolderSync.style.display = 'none';
-        elements.syncModeHint.textContent = 'Chrome標準のブックマーク同期機能を使用して、設定不要でデータを共有します。';
-    }
-}
-
-export async function saveSyncSettings() {
-    const enabled = elements.settingSyncEnabled.checked;
-    const mode = elements.settingSyncMode.value;
-    
-    const response = await sendMessage({ action: 'getSettings' });
-    const settings = response.data || {};
-    
-    settings.syncEnabled = enabled;
-    settings.syncMode = mode;
-    
-    await sendMessage({ action: 'saveSettings', settings });
-    updateSyncModeUI(mode);
-    
-    if (enabled) {
-        // 有効にした直後に一回Pullを実行
-        await autoSyncPull();
-    }
 }
 
 
@@ -386,18 +367,6 @@ export function openSettings() {
     }
 }
 
-export function exportToJson() {
-    sendMessage({ action: 'exportToJson' }).then(response => {
-        if (response.success) {
-            downloadFile(response.data, 'collections_backup.json', 'application/json');
-        }
-    });
-}
-
-export function exportToCsv() {
-    alert('CSVエクスポート機能は未実装です');
-}
-
 export function downloadFile(content, filename, mimeType) {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -410,179 +379,43 @@ export function downloadFile(content, filename, mimeType) {
     URL.revokeObjectURL(url);
 }
 
-export async function importFromJson(file) {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const content = e.target.result;
-        const response = await sendMessage({ action: 'importFromJson', data: content });
-        if (response.success) {
-            alert('インポートが完了しました');
-            loadCollections();
-        }
-    };
-    reader.readAsText(file);
-}
+export async function importFromText() {
+    const content = elements.importJsonTextarea.value.trim();
+    if (!content) {
+        alert('インポートするJSONを入力してください');
+        return;
+    }
 
-export async function selectFolder() {
     try {
-        const handle = await FolderSync.requestDirectoryAccess();
-        if (handle) {
-            await checkFolderSyncStatus();
-        }
-    } catch (error) {
-        console.error('Folder selection failed:', error);
-        alert('フォルダの選択に失敗しました: ' + error.message);
+        JSON.parse(content);
+    } catch (e) {
+        alert('JSONの形式が正しくありません');
+        return;
+    }
+
+    if (!confirm('既存のデータはすべて上書きされます。インポートを実行しますか？')) {
+        return;
+    }
+
+    const response = await sendMessage({ action: 'importFromJson', data: content });
+    if (response.success) {
+        alert('インポートが完了しました');
+        elements.importJsonTextarea.value = '';
+        loadCollections();
+    } else {
+        alert('インポートに失敗しました: ' + response.error);
     }
 }
 
-export async function syncAll() {
+export async function autoSyncPull() {
     try {
-        if (elements.btnSyncAll) elements.btnSyncAll.classList.add('rotating');
-        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '同期中...';
-        
-        // 1. Pull (Import)
         const pullResponse = await sendMessage({ action: 'autoSyncPull' });
         if (pullResponse.success && pullResponse.updated) {
             await loadCollections();
-        }
-        
-        // 2. Push (Export)
-        const pushResponse = await sendMessage({ action: 'syncPush' });
-        
-        if (pullResponse.success && pushResponse.success) {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ 同期完了';
-            // 通知は控えめに（ステータスバーのみ）
-        } else {
-            const error = pullResponse.error || pushResponse.error;
-            throw new Error(error);
+            console.log('Auto-sync: Pulled from bookmarks and updated UI');
         }
     } catch (error) {
-        console.error('Sync all failed:', error);
-        if (error.message === 'PermissionDenied') {
-            await checkFolderSyncStatus();
-        } else {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ 同期失敗';
-            alert('同期に失敗しました: ' + error.message);
-        }
-    } finally {
-        if (elements.btnSyncAll) {
-            setTimeout(() => {
-                elements.btnSyncAll.classList.remove('rotating');
-            }, 500);
-        }
-    }
-}
-
-export async function pushToFolder() {
-    try {
-        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = 'エクスポート中...';
-        const response = await sendMessage({ action: 'syncPush' });
-        if (response.success) {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ エクスポート完了';
-            alert('エクスポートが完了しました');
-        } else {
-            throw new Error(response.error);
-        }
-    } catch (error) {
-        console.error('Push to folder failed:', error);
-        if (error.message === 'PermissionDenied') {
-            await checkFolderSyncStatus(); // UIを更新して再許可ボタンを出す
-        } else {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ エクスポート失敗';
-            alert('エクスポートに失敗しました: ' + error.message);
-        }
-    }
-}
-
-export async function pullFromFolder() {
-    try {
-        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = 'インポート中...';
-        const response = await sendMessage({ action: 'autoSyncPull' });
-        if (response.success) {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ インポート完了';
-            alert('インポートが完了しました');
-            if (response.updated) await loadCollections();
-        } else {
-            throw new Error(response.error);
-        }
-    } catch (error) {
-        console.error('Pull from folder failed:', error);
-        if (error.message === 'PermissionDenied') {
-            await checkFolderSyncStatus(); // UIを更新して再許可ボタンを出す
-        } else {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ インポート失敗';
-            alert('インポートに失敗しました: ' + error.message);
-        }
-    }
-}
-
-export async function unlinkFolder() {
-    if (confirm('フォルダ連携を解除しますか？')) {
-        await FolderSync.clearSavedHandle();
-        await checkFolderSyncStatus();
-    }
-}
-
-export async function grantFolderPermission() {
-    try {
-        const handle = await FolderSync.getSavedDirectoryHandle();
-        if (handle) {
-            const granted = await FolderSync.verifyPermission(handle, true);
-            if (granted) {
-                await checkFolderSyncStatus();
-                alert('フォルダへのアクセス権限を復旧しました。');
-            }
-        }
-    } catch (error) {
-        console.error('Grant permission failed:', error);
-    }
-}
-
-export async function checkFolderSyncStatus() {
-    try {
-        const handle = await FolderSync.getSavedDirectoryHandle();
-        const exists = !!handle;
-        
-        if (exists) {
-            elements.selectedFolderInfo.style.display = 'flex';
-            elements.folderSyncActions.style.display = 'block';
-            
-            // 権限があるか確認（UIを妨げない）
-            const hasAccess = await FolderSync.hasPermission(handle, true);
-            if (hasAccess) {
-                elements.btnGrantPermission.style.display = 'none';
-                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ フォルダへのアクセス権限があります。';
-            } else {
-                elements.btnGrantPermission.style.display = 'flex';
-                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '⚠️ 権限が切れています。「再許可」を押してください。';
-            }
-        } else {
-            elements.selectedFolderInfo.style.display = 'none';
-            elements.folderSyncActions.style.display = 'none';
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '';
-        }
-    } catch (error) {
-        console.error('Failed to check folder sync status:', error);
-    }
-}
-
-/**
- * 起動時などに自動的にフォルダから最新データをロードする
- */
-export async function autoSyncPull() {
-    try {
-        const handle = await FolderSync.getSavedDirectoryHandle();
-        if (handle && await FolderSync.hasPermission(handle, false)) {
-            const response = await sendMessage({ action: 'autoSyncPull' });
-            if (response.success && response.updated) {
-                await loadCollections();
-                console.log('Auto-sync: Pulled from folder and updated UI');
-            } else if (!response.success && response.error === 'PermissionDenied') {
-                await checkFolderSyncStatus(); // UIを更新して再許可ボタンを出す
-            }
-        }
-    } catch (error) {
-        console.warn('Auto-sync pull skipped or failed:', error);
+        console.warn('Auto-sync pull failed:', error);
     }
 }
 
@@ -591,39 +424,37 @@ export function toggleLayout() {
     Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
 }
 
-/**
- * UUIDへのマイグレーションおよびBase64画像のパージを実行
- */
-export async function initUUIDMigration() {
-    const result = await chrome.storage.local.get('uuid_migration_completed_v2');
-    if (result.uuid_migration_completed_v2) return;
-
-    console.log('Running UUID migration and Base64 purge...');
-    
-    // 全データを取得してマイグレーション
-    const response = await sendMessage({ action: 'exportJson' });
+export async function saveSettings(settings) {
+    const response = await sendMessage({
+        action: 'saveSettings',
+        settings
+    });
     if (response.success) {
-        const data = JSON.parse(response.data);
-        
-        // 1. コレクションIDをUUID化
-        data.collections = migrateDataToUUIDs(data.collections);
-        
-        // 2. アイテムIDもUUID化 & Base64パージ
-        data.collections.forEach(col => {
-            if (col.items) {
-                // UUID化
-                col.items = migrateDataToUUIDs(col.items);
-                // Base64パージ
-                col.items = purgeBase64Images(col.items);
-                
-                // アイテム内のcollectionIdも更新
-                col.items.forEach(item => item.collectionId = col.id);
-            }
-        });
-
-        // 3. 保存し直す
-        await sendMessage({ action: 'importJson', data: JSON.stringify(data) });
-        await chrome.storage.local.set({ uuid_migration_completed_v2: true });
-        console.log('Migration v2 completed.');
+        state.settings = settings;
     }
+}
+
+export async function syncPush() {
+    await sendMessage({ action: 'syncPush' });
+}
+
+export async function copyCollectionJson() {
+    const response = await sendMessage({
+        action: 'exportCollection',
+        id: state.currentCollectionId
+    });
+
+    if (response.success && response.data) {
+        const jsonStr = JSON.stringify(response.data, null, 2);
+        try {
+            await navigator.clipboard.writeText(jsonStr);
+            alert('クリップボードにコピーしました');
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+            alert('コピーに失敗しました');
+        }
+    } else {
+        alert('データの取得に失敗しました');
+    }
+    hideModal(elements.modalCollectionMenu);
 }
