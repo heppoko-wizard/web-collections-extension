@@ -75,6 +75,14 @@ export function initEvents(handlers) {
         });
     }
 
+    if (elements.btnRebuildFromBookmarks) {
+        elements.btnRebuildFromBookmarks.addEventListener('click', () => {
+            if (handlers.rebuildFromBookmarks) {
+                handlers.rebuildFromBookmarks();
+            }
+        });
+    }
+
     // Display Settings
     if (elements.settingTileWidth) {
         elements.settingTileWidth.addEventListener('input', (e) => {
@@ -94,7 +102,13 @@ export function initEvents(handlers) {
             const newSettings = { ...state.settings, bookmarkRootId: e.target.value };
             state.settings.bookmarkRootId = e.target.value;
             if (handlers.saveSettings) await handlers.saveSettings(newSettings);
-            if (handlers.syncPush) await handlers.syncPush();
+            
+            // コレクションデータをクリア
+            await chrome.storage.local.set({ wc_collections: [] });
+            
+            // 新しいルートフォルダからデータを引き込む
+            if (handlers.autoSyncPull) await handlers.autoSyncPull();
+            if (handlers.loadCollections) await handlers.loadCollections();
         });
     }
 

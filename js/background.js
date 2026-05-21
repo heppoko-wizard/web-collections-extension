@@ -138,6 +138,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             sourceUrl: tab.url,
             title: tab.title
         };
+        if (info.linkUrl) {
+            itemData.title = await fetchPageTitle(info.linkUrl, tab.title);
+        }
     } else if (info.selectionText) {
         itemData = {
             type: 'text',
@@ -150,9 +153,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             itemData = {
                 type: 'webpage',
                 url: info.linkUrl,
-                title: info.linkUrl,
+                title: tab.title,
                 sourceUrl: tab.url
             };
+            itemData.title = await fetchPageTitle(info.linkUrl, tab.title);
         } else {
             itemData = {
                 type: 'webpage',
@@ -212,5 +216,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
 });
+
+/**
+ * リンク先のWebページタイトルを非同期でフェッチして抽出する
+ */
+async function fetchPageTitle(url, fallbackTitle) {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) return fallbackTitle;
+
+        const html = await response.text();
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if (titleMatch && titleMatch[1]) {
+            return decodeHtmlEntities(titleMatch[1].trim());
+        }
+    } catch (error) {
+        console.warn('Failed to fetch page title:', error);
+    }
+    return fallbackTitle;
+}
+
+/**
+ * 簡易的なHTMLエンティティのデコード
+ */
+function decodeHtmlEntities(str) {
+    return str
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#039;/g, "'")
+        .replace(/&#x27;/g, "'");
+}
 
 console.log('Web Collections background script loaded');

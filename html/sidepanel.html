@@ -113,7 +113,7 @@
             </h3>
             <div class="setting-item">
               <label for="setting-bookmark-root">同期ルートフォルダ</label>
-              <select id="setting-bookmark-root" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-main); margin-top: 4px;">
+              <select id="setting-bookmark-root">
                 <option value="">[WC] Web Collections (デフォルト)</option>
               </select>
             </div>
@@ -127,9 +127,14 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"></path><path d="m21 16 1.58-1.58a1 1 0 0 0 0-1.42l-4.58-4.58a1 1 0 0 0-1.42 0L12 13"></path><path d="M3 13l4-4a1 1 0 0 1 1.42 0L12 13"></path><rect x="3" y="13" width="18" height="8" rx="2"></rect></svg>
               データ管理
             </h3>
+            <div class="setting-item" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+              <label>同期データの再構成</label>
+              <span class="hint" style="margin-bottom: 4px;">ローカルデータをクリアし、現在のブックマークフォルダからコレクションデータを再構築します。</span>
+              <button id="btn-rebuild-from-bookmarks" class="btn btn-secondary" style="align-self: flex-start;">ブックマークから再構築</button>
+            </div>
             <div class="setting-item" style="display: flex; flex-direction: column; gap: 8px;">
               <label for="import-json-textarea">JSONインポート（貼り付け）</label>
-              <textarea id="import-json-textarea" placeholder="エクスポートしたJSONデータをここに貼り付けてください..." style="width: 100%; height: 120px; padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-main); font-family: monospace; font-size: 12px; resize: vertical; box-sizing: border-box;"></textarea>
+              <textarea id="import-json-textarea" placeholder="エクスポートしたJSONデータをここに貼り付けてください..."></textarea>
               <button id="btn-import-paste" class="btn btn-primary" style="align-self: flex-start;">インポートを実行</button>
             </div>
           </div>

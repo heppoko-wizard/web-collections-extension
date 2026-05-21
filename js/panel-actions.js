@@ -407,6 +407,31 @@ export async function importFromText() {
     }
 }
 
+export async function rebuildFromBookmarks() {
+    if (!confirm('ローカルのコレクションデータを一度すべてクリアし、現在のブックマークフォルダから最新のデータセットを引き込んで再構築します。実行しますか？')) {
+        return;
+    }
+
+    try {
+        // 1. ローカルストレージをクリア
+        await chrome.storage.local.set({ wc_collections: [] });
+
+        // 2. ブックマークからPullを実行
+        const pullResponse = await sendMessage({ action: 'autoSyncPull' });
+
+        if (pullResponse.success) {
+            // 3. UIの読み込みと更新
+            await loadCollections();
+            alert('ブックマークからの再構築が完了しました');
+        } else {
+            alert('再構築に失敗しました: ' + pullResponse.error);
+        }
+    } catch (error) {
+        console.error('Rebuild failed:', error);
+        alert('エラーが発生しました: ' + error.message);
+    }
+}
+
 export async function autoSyncPull() {
     try {
         const pullResponse = await sendMessage({ action: 'autoSyncPull' });

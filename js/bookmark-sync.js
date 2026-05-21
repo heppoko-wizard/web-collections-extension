@@ -138,7 +138,7 @@ export const BookmarkSync = {
                 continue;
             }
 
-            const items = await storage.getItemsByCollection(col.id);
+            const items = await storage.getItemsByCollection(col.id, true);
             const remoteItems = colFolder ? (colFolder.children || []) : [];
 
             let targetFolder = colFolder;

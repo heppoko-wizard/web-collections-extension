@@ -39,7 +39,8 @@ async function init() {
         renameItem: Actions.renameItem,
         deleteItem: Actions.deleteItem,
         copyCollectionJson: Actions.copyCollectionJson,
-        autoSyncPull: Actions.autoSyncPull
+        autoSyncPull: Actions.autoSyncPull,
+        rebuildFromBookmarks: Actions.rebuildFromBookmarks
     });
 
     // 3. 初期データのロード

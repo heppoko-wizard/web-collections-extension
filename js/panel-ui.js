@@ -40,6 +40,7 @@ export function initElements() {
     elements.lastSyncTime = document.getElementById('last-sync-time');
     elements.importJsonTextarea = document.getElementById('import-json-textarea');
     elements.btnImportPaste = document.getElementById('btn-import-paste');
+    elements.btnRebuildFromBookmarks = document.getElementById('btn-rebuild-from-bookmarks');
 
     // Settings Inputs
     elements.settingTileWidth = document.getElementById('setting-tile-width');
