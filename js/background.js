@@ -82,7 +82,7 @@ export async function setupContextMenus() {
         // 親メニュー
         chrome.contextMenus.create({
             id: 'add-to-web-collections',
-            title: chrome.i18n.getMessage('contextMenuMain'),
+            title: 'Web Collectionsに追加',
             contexts: ['all']
         });
 
@@ -93,7 +93,7 @@ export async function setupContextMenus() {
             chrome.contextMenus.create({
                 parentId: 'add-to-web-collections',
                 id: 'create-new-collection-menu',
-                title: chrome.i18n.getMessage('contextMenuNew'),
+                title: '新しいコレクションを作成...',
                 contexts: ['all']
             });
         } else {
@@ -171,7 +171,7 @@ async function handleAddItem(itemData, tab, collectionId = null) {
     if (!targetId) {
         let collections = await CollectionStorage.getAllCollections();
         if (collections.length === 0) {
-            await CollectionStorage.createCollection(chrome.i18n.getMessage('defaultCollectionName'));
+            await CollectionStorage.createCollection('マイコレクション');
             collections = await CollectionStorage.getAllCollections();
         }
         targetId = collections[0].id;

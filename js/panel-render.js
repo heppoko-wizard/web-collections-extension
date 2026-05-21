@@ -5,13 +5,6 @@
  */
 
 import { state } from './panel-state.js';
-import { t } from './i18n-helper.js';
-
-// Constants (copied from panel.js)
-const ITEM_HEIGHT_LIST = 100;
-const ITEM_HEIGHT_GRID = 220;
-const BUFFER_SIZE = 20;
-const GAP = 8;
 
 // SVG Icons - Monotone Technical
 const ICONS = {
@@ -41,8 +34,8 @@ export function renderCollectionsList(elements, onOpenCollection) {
         container.innerHTML = `
       <div class="empty-state">
         <div class="icon">${ICONS.COLLECTION}</div>
-        <p>${t('emptyCollections')}</p>
-        <p>${t('emptyCollectionsSub')}</p>
+        <p>コレクションがありません</p>
+        <p>「新しいコレクション」ボタンで作成しましょう</p>
       </div>
     `;
         return;
@@ -75,7 +68,7 @@ export function renderCollectionsList(elements, onOpenCollection) {
 }
 
 /**
- * アイテム一覧の描画 (段階的レンダリング)
+ * アイテム一覧の描画
  * @param {object} elements 
  * @param {Function} setupDragAndDrop 
  */
@@ -95,92 +88,82 @@ export function renderItems(elements, setupDragAndDrop) {
     // Update toggle button icon
     if (elements.btnLayoutToggle) {
         elements.btnLayoutToggle.innerHTML = state.layoutMode === 'grid' ? ICONS.LIST : ICONS.GRID;
-        elements.btnLayoutToggle.title = state.layoutMode === 'grid' ? t('layoutList') : t('layoutGrid');
+        elements.btnLayoutToggle.title = state.layoutMode === 'grid' ? 'リスト表示にする' : 'タイル表示にする';
     }
 
     if (!items || items.length === 0) {
         container.innerHTML = `
       <div class="empty-state">
         <div class="icon">${ICONS.PAGE}</div>
-        <p>${t('emptyItems')}</p>
-        <p>${t('emptyItemsSub')}</p>
+        <p>アイテムがありません</p>
+        <p>ページ上で右クリック→「コレクションに追加」</p>
       </div>
     `;
         return;
     }
 
-    // Clear existing content and start chunked rendering
-    container.innerHTML = '';
-    
-    // Stop any pending chunked rendering if necessary (via flag on state or elements)
-    if (container.dataset.renderId) {
-        cancelAnimationFrame(parseInt(container.dataset.renderId, 10));
-    }
+    // Direct native scroll rendering
+    container.innerHTML = items.map(item => renderItem(item)).join('');
 
-    // Attach resize observer only once
+    // Attach click listener for event delegation if not already attached
     const scrollContainer = elements.itemsContainer;
-    if (!scrollContainer.dataset.hasResizeObserver) {
-        const resizeObserver = new ResizeObserver(() => {
-            // Need to reconsider if we really need to re-render everything on resize
-            // In non-virtualized mode, CSS handles the grid layout.
-            // Only need to re-calculate columns if we were doing absolute positioning, 
-            // but we switched to normal flow. So we might not even need this.
+    if (!scrollContainer.dataset.hasScrollListener) {
+        scrollContainer.addEventListener('click', (e) => {
+            const target = e.target;
+            
+            // 1. Item Menu Toggle
+            const menuBtn = target.closest('.btn-item-menu');
+            if (menuBtn) {
+                e.stopPropagation();
+                const id = menuBtn.dataset.id;
+                // Close others
+                elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => {
+                    if (m.dataset.id !== id) m.classList.remove('active');
+                });
+                // Toggle this
+                const dropdown = elements.itemsList.querySelector(`.item-menu-dropdown[data-id="${id}"]`);
+                if (dropdown) dropdown.classList.toggle('active');
+                return;
+            }
+
+            // Item Card Click (Open Link)
+            const card = target.closest('.item-card');
+            if (card) {
+                if (target.closest('button') || target.closest('a') || target.closest('.item-menu-dropdown')) {
+                    return;
+                }
+                const id = card.dataset.id;
+                // Dispatches a custom event to be handled by Actions/Events
+                const event = new CustomEvent('itemClick', { detail: { id } });
+                scrollContainer.dispatchEvent(event);
+            }
+
+            // Close all menus when clicking elsewhere
+            elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => m.classList.remove('active'));
         });
-        resizeObserver.observe(scrollContainer);
-        scrollContainer.dataset.hasResizeObserver = 'true';
+        scrollContainer.dataset.hasScrollListener = 'true';
     }
 
-    // Initial render of first chunk
-    renderChunks(elements, items, 0, 50, setupDragAndDrop);
+    // Setup lazy loading for images
+    setupLazyLoading(container);
+
+    // Setup drag and drop
+    if (setupDragAndDrop) setupDragAndDrop();
 }
-
-/**
- * 段階的レンダリングの実行
- * @param {object} elements 
- * @param {Array} items 
- * @param {number} startIndex 
- * @param {number} chunkSize 
- * @param {Function} setupDragAndDrop 
- */
-function renderChunks(elements, items, startIndex, chunkSize, setupDragAndDrop) {
-    const chunk = items.slice(startIndex, startIndex + chunkSize);
-    const html = chunk.map((item, i) => renderItem(item, startIndex + i)).join('');
-    
-    elements.itemsList.insertAdjacentHTML('beforeend', html);
-
-    if (startIndex + chunkSize < items.length) {
-        const nextTask = requestAnimationFrame(() => {
-            renderChunks(elements, items, startIndex + chunkSize, chunkSize, setupDragAndDrop);
-        });
-        elements.itemsList.dataset.renderId = nextTask.toString();
-    } else {
-        elements.itemsList.removeAttribute('renderId');
-        // Finalize D&D (only need to init once, but setupDragAndDrop handles the check)
-        if (setupDragAndDrop) setupDragAndDrop();
-    }
-}
-
-/**
- * 仮想スクロール: 可視領域のアイテムのみ描画
- * @param {object} elements 
- */
-/* Removed renderVisibleItems */
 
 /**
  * 単一アイテムのHTML生成
  * @param {object} item 
- * @param {number} index 
  * @returns {string} HTML string
  */
-export function renderItem(item, index = 0) {
+export function renderItem(item) {
     let thumbContent = '';
     let content = '';
-    const loadingAttr = index < 100 ? 'eager' : 'lazy';
 
     switch (item.type) {
         case 'webpage':
             thumbContent = item.faviconUrl
-                ? `<img src="${escapeHtml(item.faviconUrl)}" alt="" loading="${loadingAttr}">`
+                ? `<img class="lazy-image" data-src="${escapeHtml(item.faviconUrl)}" alt="">`
                 : `<span class="icon">${ICONS.PAGE}</span>`;
             content = `
         <div class="item-title"><a href="${escapeHtml(item.url)}" target="_blank">${escapeHtml(item.title || item.url)}</a></div>
@@ -190,10 +173,10 @@ export function renderItem(item, index = 0) {
 
         case 'image':
             thumbContent = item.imageUrl
-                ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="${loadingAttr}">`
+                ? `<img class="lazy-image" data-src="${escapeHtml(item.imageUrl)}" alt="">`
                 : `<span class="icon">${ICONS.IMAGE}</span>`;
             content = `
-        <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">${escapeHtml(item.title || t('image'))}</a></div>
+        <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">${escapeHtml(item.title || '画像')}</a></div>
         <div class="item-domain">${getDomain(item.sourceUrl || item.url)}</div>
       `;
             break;
@@ -213,7 +196,7 @@ export function renderItem(item, index = 0) {
 
         default:
             thumbContent = `<span class="icon">${ICONS.PAGE}</span>`;
-            content = `<div class="item-title">${escapeHtml(item.title || t('item'))}</div>`;
+            content = `<div class="item-title">${escapeHtml(item.title || 'アイテム')}</div>`;
     }
 
     const memoContent = item.memo
@@ -226,16 +209,46 @@ export function renderItem(item, index = 0) {
       <div class="item-content">${content}${memoContent}</div>
       <div class="item-actions">
         <div class="item-menu-container">
-          <button class="icon-btn btn-item-menu" data-id="${item.id}" title="${t('btnCollectionMenuTitle')}">${ICONS.MENU}</button>
+          <button class="icon-btn btn-item-menu" data-id="${item.id}" title="メニュー">${ICONS.MENU}</button>
           <div class="item-menu-dropdown" data-id="${item.id}">
-            <button class="menu-item btn-add-memo" data-id="${item.id}">${ICONS.MEMO} ${t('promptMemo')}</button>
-            <button class="menu-item btn-rename-item" data-id="${item.id}">${ICONS.RENAME} ${t('promptRename')}</button>
-            <button class="menu-item btn-delete-item" data-id="${item.id}">${ICONS.DELETE} ${t('btnDelete')}</button>
+            <button class="menu-item btn-add-memo" data-id="${item.id}">${ICONS.MEMO} メモを追加</button>
+            <button class="menu-item btn-rename-item" data-id="${item.id}">${ICONS.RENAME} 名前を変更</button>
+            <button class="menu-item btn-delete-item" data-id="${item.id}">${ICONS.DELETE} 削除</button>
           </div>
         </div>
       </div>
     </div>
   `;
+}
+
+/**
+ * 画像の遅延読み込みの設定（IntersectionObserver による大容量コレクション対応）
+ * @param {HTMLElement} container 
+ */
+export function setupLazyLoading(container) {
+    const lazyImages = container.querySelectorAll('img.lazy-image');
+    if (lazyImages.length === 0) return;
+
+    const scrollContainer = document.getElementById('items-container');
+
+    const observer = new IntersectionObserver((entries, obs) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const img = entry.target;
+                if (img.dataset.src) {
+                    img.src = img.dataset.src;
+                    img.removeAttribute('data-src');
+                }
+                img.classList.remove('lazy-image');
+                obs.unobserve(img);
+            }
+        });
+    }, {
+        root: scrollContainer,
+        rootMargin: '8000px 0px 8000px 0px' // 上下に広大な先読みマージンを設定し、高速スクロールに対応
+    });
+
+    lazyImages.forEach(img => observer.observe(img));
 }
 
 // ============================================

@@ -18,6 +18,7 @@ export function initElements() {
     elements.collectionsContainer = document.getElementById('collections-container');
     elements.itemsContainer = document.getElementById('items-container');
     elements.itemsList = document.getElementById('items-list');
+    elements.virtualScrollSpacer = document.getElementById('virtual-scroll-spacer');
     elements.collectionTitle = document.getElementById('collection-title');
 
     // Buttons

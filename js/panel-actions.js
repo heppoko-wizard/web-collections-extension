@@ -12,7 +12,6 @@ import { migrateDataToUUIDs, purgeBase64Images } from './migration.js';
 import { FolderSync } from './folder-sync.js';
 import { initDragDrop } from './panel-dragdrop.js';
 import { DeviceManager } from './device-manager.js';
-import { t } from './i18n-helper.js';
 
 // Message API Helper
 async function sendMessage(message) {
@@ -69,7 +68,7 @@ export async function openCollection(id) {
 }
 
 export async function deleteCurrentCollection() {
-    if (!confirm(t('confirmDeleteCollection'))) return;
+    if (!confirm('このコレクションを削除しますか？')) return;
 
     const response = await sendMessage({
         action: 'deleteCollection',
@@ -129,8 +128,7 @@ export async function addCurrentPage() {
 
     if (targetTabs.length === 0) return;
 
-    const confirmMsg = t('confirmAddAllTabs').replace('$COUNT$', targetTabs.length.toString());
-    if (!confirm(confirmMsg)) return;
+    if (!confirm(`${targetTabs.length}個のタブをこのコレクションに追加しますか？`)) return;
 
     let addedCount = 0;
     for (const tab of targetTabs) {
@@ -184,7 +182,6 @@ export async function saveNote() {
 }
 
 export async function deleteItem(itemId) {
-    if (!confirm(t('confirmDeleteItem'))) return;
     const response = await sendMessage({
         action: 'removeItem',
         collectionId: state.currentCollectionId,
@@ -221,7 +218,7 @@ export async function addItemMemo(itemId) {
     if (!item) return;
 
     const currentMemo = item.memo || '';
-    const memo = prompt(t('promptMemo'), currentMemo);
+    const memo = prompt('メモを入力:', currentMemo);
 
     if (memo !== null) {
         await updateItem(itemId, { memo });
@@ -233,7 +230,7 @@ export async function renameItem(itemId) {
     if (!item) return;
 
     const currentTitle = item.title || '';
-    const newTitle = prompt(t('promptRename'), currentTitle);
+    const newTitle = prompt('名前を変更:', currentTitle);
 
     if (newTitle !== null && newTitle.trim() !== '') {
         await updateItem(itemId, { title: newTitle.trim() });
@@ -248,11 +245,11 @@ export async function openAllLinks() {
         .map(i => i.url || i.sourceUrl);
 
     if (urls.length === 0) {
+        alert('開けるリンクがありません');
         return;
     }
 
-    const confirmMsg = t('confirmOpenAllLinks').replace('$COUNT$', urls.length.toString());
-    if (!confirm(confirmMsg)) return;
+    if (!confirm(`${urls.length}個のリンクをすべて開きますか？`)) return;
 
     urls.forEach(url => {
         chrome.tabs.create({ url, active: false });
@@ -316,7 +313,7 @@ export async function updateSettingsUI() {
     
     if (settings.lastSyncTime) {
         const date = new Date(settings.lastSyncTime);
-        elements.lastSyncTime.textContent = t('lastSync').replace('$TIME$', date.toLocaleString());
+        elements.lastSyncTime.textContent = `最終同期: ${date.toLocaleString('ja-JP')}`;
     } else {
         elements.lastSyncTime.textContent = '';
     }
@@ -348,10 +345,10 @@ export async function updateSettingsUI() {
 function updateSyncModeUI(mode) {
     if (mode === 'folder') {
         elements.sectionFolderSync.style.display = 'block';
-        elements.syncModeHint.textContent = t('syncHintFolder');
+        elements.syncModeHint.textContent = 'OneDriveやGoogle Driveの同期フォルダを使用して、デバイス間でデータを共有します。';
     } else {
         elements.sectionFolderSync.style.display = 'none';
-        elements.syncModeHint.textContent = t('syncHintBookmark');
+        elements.syncModeHint.textContent = 'Chrome標準のブックマーク同期機能を使用して、設定不要でデータを共有します。';
     }
 }
 
@@ -398,7 +395,7 @@ export function exportToJson() {
 }
 
 export function exportToCsv() {
-    // alert(t('csvNotImplemented'));
+    alert('CSVエクスポート機能は未実装です');
 }
 
 export function downloadFile(content, filename, mimeType) {
@@ -419,7 +416,7 @@ export async function importFromJson(file) {
         const content = e.target.result;
         const response = await sendMessage({ action: 'importFromJson', data: content });
         if (response.success) {
-            // alert(t('importSuccess'));
+            alert('インポートが完了しました');
             loadCollections();
         }
     };
@@ -441,7 +438,7 @@ export async function selectFolder() {
 export async function syncAll() {
     try {
         if (elements.btnSyncAll) elements.btnSyncAll.classList.add('rotating');
-        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = t('syncing');
+        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '同期中...';
         
         // 1. Pull (Import)
         const pullResponse = await sendMessage({ action: 'autoSyncPull' });
@@ -453,7 +450,7 @@ export async function syncAll() {
         const pushResponse = await sendMessage({ action: 'syncPush' });
         
         if (pullResponse.success && pushResponse.success) {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = `✅ ${t('syncSuccess')}`;
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ 同期完了';
             // 通知は控えめに（ステータスバーのみ）
         } else {
             const error = pullResponse.error || pushResponse.error;
@@ -464,8 +461,8 @@ export async function syncAll() {
         if (error.message === 'PermissionDenied') {
             await checkFolderSyncStatus();
         } else {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = `❌ ${t('syncError')}`;
-            // alert(t('syncErrorMsg') + error.message);
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ 同期失敗';
+            alert('同期に失敗しました: ' + error.message);
         }
     } finally {
         if (elements.btnSyncAll) {
@@ -478,11 +475,11 @@ export async function syncAll() {
 
 export async function pushToFolder() {
     try {
-        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = t('exporting');
+        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = 'エクスポート中...';
         const response = await sendMessage({ action: 'syncPush' });
         if (response.success) {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = `✅ ${t('exportSuccess')}`;
-            // alert(t('exportSuccessMsg'));
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ エクスポート完了';
+            alert('エクスポートが完了しました');
         } else {
             throw new Error(response.error);
         }
@@ -491,19 +488,19 @@ export async function pushToFolder() {
         if (error.message === 'PermissionDenied') {
             await checkFolderSyncStatus(); // UIを更新して再許可ボタンを出す
         } else {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = `❌ ${t('exportError')}`;
-            // alert(t('exportErrorMsg') + error.message);
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ エクスポート失敗';
+            alert('エクスポートに失敗しました: ' + error.message);
         }
     }
 }
 
 export async function pullFromFolder() {
     try {
-        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = t('importing');
+        if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = 'インポート中...';
         const response = await sendMessage({ action: 'autoSyncPull' });
         if (response.success) {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = `✅ ${t('importSuccess')}`;
-            // alert(t('importSuccessMsg'));
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ インポート完了';
+            alert('インポートが完了しました');
             if (response.updated) await loadCollections();
         } else {
             throw new Error(response.error);
@@ -513,14 +510,14 @@ export async function pullFromFolder() {
         if (error.message === 'PermissionDenied') {
             await checkFolderSyncStatus(); // UIを更新して再許可ボタンを出す
         } else {
-            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = `❌ ${t('importError')}`;
-            // alert(t('importErrorMsg') + error.message);
+            if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '❌ インポート失敗';
+            alert('インポートに失敗しました: ' + error.message);
         }
     }
 }
 
 export async function unlinkFolder() {
-    if (confirm(t('confirmUnlink'))) {
+    if (confirm('フォルダ連携を解除しますか？')) {
         await FolderSync.clearSavedHandle();
         await checkFolderSyncStatus();
     }
@@ -533,7 +530,7 @@ export async function grantFolderPermission() {
             const granted = await FolderSync.verifyPermission(handle, true);
             if (granted) {
                 await checkFolderSyncStatus();
-                // alert(t('permissionRestored'));
+                alert('フォルダへのアクセス権限を復旧しました。');
             }
         }
     } catch (error) {
@@ -554,10 +551,10 @@ export async function checkFolderSyncStatus() {
             const hasAccess = await FolderSync.hasPermission(handle, true);
             if (hasAccess) {
                 elements.btnGrantPermission.style.display = 'none';
-                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = t('syncStatusOk');
+                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '✅ フォルダへのアクセス権限があります。';
             } else {
                 elements.btnGrantPermission.style.display = 'flex';
-                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = t('syncStatusWarning');
+                if (elements.folderSyncStatus) elements.folderSyncStatus.textContent = '⚠️ 権限が切れています。「再許可」を押してください。';
             }
         } else {
             elements.selectedFolderInfo.style.display = 'none';

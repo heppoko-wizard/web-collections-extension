@@ -7,15 +7,13 @@ import { initElements } from './panel-ui.js';
 import { initEvents } from './panel-events.js';
 import * as Actions from './panel-actions.js';
 import { DeviceManager } from './device-manager.js';
-import { applyI18n } from './i18n-helper.js';
 
 /**
  * アプリケーションの初期化
  */
 async function init() {
-    // 1. DOM要素の取得と翻訳適用
+    // 1. DOM要素の取得
     initElements();
-    applyI18n();
 
     // 2. デバイス情報の初期化
     const deviceInfo = await DeviceManager.getDeviceInfo();

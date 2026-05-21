@@ -84,10 +84,20 @@
         "message": "确定删除此项目吗？"
     },
     "confirmAddAllTabs": {
-        "message": "将 $COUNT$ 个标签页添加到此收藏吗？"
+        "message": "将 $COUNT$ 个标签页添加到此收藏吗？",
+        "placeholders": {
+            "COUNT": {
+                "content": "$1"
+            }
+        }
     },
     "confirmOpenAllLinks": {
-        "message": "打开所有 $COUNT$ 个链接吗？"
+        "message": "打开所有 $COUNT$ 个链接吗？",
+        "placeholders": {
+            "COUNT": {
+                "content": "$1"
+            }
+        }
     },
     "promptRename": {
         "message": "重命名："
@@ -102,7 +112,12 @@
         "message": "⚠️ 权限已过期。请“重新授权”。"
     },
     "lastSync": {
-        "message": "最后同步：$TIME$"
+        "message": "最后同步：$TIME$",
+        "placeholders": {
+            "TIME": {
+                "content": "$1"
+            }
+        }
     },
     "syncModeBookmark": {
         "message": "Chrome 书签 (自动同步)"
