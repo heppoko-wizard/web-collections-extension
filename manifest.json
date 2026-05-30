@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2H6ZDGGTy7Eu4AV14pyUyHQpaiqRpB9zSFsNX6z9FTnzCWKksZR0OYr5n+e/WC9pvk0qNekzD15ebFcPOYSgEpaEz5NEQbftpcg9dGJu3QKPqohpan7CemLaYYAaODGs1dK8u7m9kvjxH13ONOlDp+bgcuCp/ukJWgFpZS+xfCL3cos+KyzuQGj6Uygp7hJXTbpMvBsOl60lv2nFwU3aJuJsncOiEMSOcnmxeVGfQf3aoGlXuaEzwpsiUTwk/B08Amk28gYakXuxx8TdHyLl4yGA6xqM1hw2z9OR9GBtSsQ/Bp+2lF7bDgeaHmYbtzpi4iCZbq+etcf9SJc+45qDfwIDAQAB",
   "name": "__MSG_appName__",
   "version": "1.1.0",
   "description": "__MSG_appDesc__",
@@ -24,8 +25,17 @@
     "activeTab",
     "scripting",
     "alarms",
-    "bookmarks"
+    "identity"
   ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "oauth2": {
+    "client_id": "518823690994-81e300vbua84n9qjfpbv5dg0t3vgb87v.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.appdata"
+    ]
+  },
   "action": {
     "default_title": "__MSG_openSidePanel__"
   },

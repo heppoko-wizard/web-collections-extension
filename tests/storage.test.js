@@ -73,4 +73,76 @@ test('CollectionStorage - CRUD operations', async (t) => {
         const all = await CollectionStorage.getAllCollections(false);
         assert.strictEqual(all.find(c => c.id === col.id), undefined);
     });
+
+    await t.test('safe merge and preserve items during import', async () => {
+        mockStorage.clear();
+        
+        const col = await CollectionStorage.createCollection('Original Col');
+        
+        // ローカルコレクションの直接書き換えでテスト用の固定IDアイテムを設定
+        const collections = await CollectionStorage._getCollectionsRaw();
+        const targetCol = collections.find(c => c.id === col.id);
+        targetCol.items = [
+            {
+                id: 'item-1',
+                collectionId: col.id,
+                type: 'link',
+                url: 'https://example.com/original',
+                title: 'Original Item',
+                updatedAt: 1000,
+                sortOrder: 0,
+                isDeleted: false
+            }
+        ];
+        await CollectionStorage._saveCollectionsRaw(collections);
+
+        const partialImportData = {
+            id: col.id,
+            name: 'Merged Name',
+            updatedAt: 2000
+        };
+
+        await CollectionStorage.importFromJson(JSON.stringify(partialImportData));
+
+        const updatedCol = await CollectionStorage.getCollection(col.id);
+        assert.strictEqual(updatedCol.name, 'Merged Name');
+
+        const items = await CollectionStorage.getItemsByCollection(col.id);
+        assert.strictEqual(items.length, 1);
+        assert.strictEqual(items[0].title, 'Original Item');
+
+        const mergeImportData = {
+            id: col.id,
+            name: 'Merged Name V2',
+            updatedAt: 3000,
+            items: [
+                {
+                    id: 'item-1',
+                    type: 'link',
+                    url: 'https://example.com/updated',
+                    title: 'Updated Item',
+                    updatedAt: 4000
+                },
+                {
+                    id: 'item-2',
+                    type: 'link',
+                    url: 'https://example.com/new',
+                    title: 'New Item',
+                    updatedAt: 2000
+                }
+            ]
+        };
+
+        await CollectionStorage.importFromJson(JSON.stringify(mergeImportData));
+
+        const finalItems = await CollectionStorage.getItemsByCollection(col.id);
+        assert.strictEqual(finalItems.length, 2);
+
+        const mergedItem1 = finalItems.find(i => i.id === 'item-1');
+        assert.strictEqual(mergedItem1.title, 'Updated Item');
+        assert.strictEqual(mergedItem1.url, 'https://example.com/updated');
+
+        const newItem = finalItems.find(i => i.id === 'item-2');
+        assert.strictEqual(newItem.title, 'New Item');
+    });
 });

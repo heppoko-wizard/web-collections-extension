@@ -349,6 +349,10 @@ export async function updateSettingsUI() {
         }
     }
 
+    if (elements.settingEncryptEnabled) {
+        elements.settingEncryptEnabled.checked = settings.encryptEnabled || false;
+    }
+
     applyDisplaySettings();
 }
 
@@ -379,36 +383,72 @@ export function downloadFile(content, filename, mimeType) {
     URL.revokeObjectURL(url);
 }
 
-export async function importFromText() {
-    const content = elements.importJsonTextarea.value.trim();
-    if (!content) {
-        alert('インポートするJSONを入力してください');
-        return;
-    }
-
-    try {
-        JSON.parse(content);
-    } catch (e) {
-        alert('JSONの形式が正しくありません');
-        return;
-    }
-
-    if (!confirm('既存のデータはすべて上書きされます。インポートを実行しますか？')) {
-        return;
-    }
-
-    const response = await sendMessage({ action: 'importFromJson', data: content });
-    if (response.success) {
-        alert('インポートが完了しました');
-        elements.importJsonTextarea.value = '';
-        loadCollections();
+export async function exportAllCollections() {
+    const response = await sendMessage({ action: 'exportJson' });
+    if (response.success && response.data) {
+        downloadFile(response.data, 'web-collections-all.json', 'application/json');
     } else {
-        alert('インポートに失敗しました: ' + response.error);
+        alert('エクスポートに失敗しました：' + (response.error || '不明なエラー'));
     }
 }
 
+export async function importFromFiles() {
+    const fileInput = elements.importJsonFile;
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        alert('インポートするJSONファイルを選択してください');
+        return;
+    }
+
+    const files = Array.from(fileInput.files);
+    
+    if (!confirm('インポートしたデータは既存のコレクションと統合されます。実行しますか？')) {
+        return;
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    const errors = [];
+
+    for (const file of files) {
+        try {
+            const content = await readFileAsText(file);
+            JSON.parse(content);
+
+            const response = await sendMessage({ action: 'importJson', data: content });
+            if (response.success) {
+                successCount++;
+            } else {
+                failCount++;
+                errors.push(file.name + '：' + response.error);
+            }
+        } catch (e) {
+            failCount++;
+            errors.push(file.name + '：' + e.message);
+        }
+    }
+
+    if (successCount > 0) {
+        alert(successCount + '個のファイルをインポートしました');
+        fileInput.value = '';
+        await loadCollections();
+    }
+    
+    if (failCount > 0) {
+        alert('失敗したファイルがあります。合計は' + failCount + '件です：\n' + errors.join('\n'));
+    }
+}
+
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = (e) => reject(new Error('ファイルの読み込みに失敗しました'));
+        reader.readAsText(file);
+    });
+}
+
 export async function rebuildFromBookmarks() {
-    if (!confirm('ローカルのコレクションデータを一度すべてクリアし、現在のブックマークフォルダから最新のデータセットを引き込んで再構築します。実行しますか？')) {
+    if (!confirm('ローカルのコレクションデータを一度すべてクリアし、Googleドライブに保存されている最新の同期データから再構築します。実行しますか？')) {
         return;
     }
 
@@ -416,13 +456,13 @@ export async function rebuildFromBookmarks() {
         // 1. ローカルストレージをクリア
         await chrome.storage.local.set({ wc_collections: [] });
 
-        // 2. ブックマークからPullを実行
+        // 2. GoogleドライブからPullを実行
         const pullResponse = await sendMessage({ action: 'autoSyncPull' });
 
         if (pullResponse.success) {
             // 3. UIの読み込みと更新
             await loadCollections();
-            alert('ブックマークからの再構築が完了しました');
+            alert('Googleドライブからの再構築が完了しました');
         } else {
             alert('再構築に失敗しました: ' + pullResponse.error);
         }
@@ -482,4 +522,108 @@ export async function copyCollectionJson() {
         alert('データの取得に失敗しました');
     }
     hideModal(elements.modalCollectionMenu);
+}
+
+export async function toggleEncryptOption(enabled) {
+    const confirmMessage = enabled
+        ? 'ブックマークの暗号化を有効にします。過去に登録済みのすべてのコレクションデータを暗号化して再構築します。よろしいですか？'
+        : 'ブックマークの暗号化を解除します。過去に登録済みのすべてのコレクションデータを平文形式に戻して再構築します。よろしいですか？';
+
+    if (!confirm(confirmMessage)) {
+        await updateSettingsUI();
+        return;
+    }
+
+    try {
+        const response = await sendMessage({
+            action: 'migrateEncryption',
+            encryptEnabled: enabled
+        });
+
+        if (response.success) {
+            await rebuildFromBookmarks();
+        } else {
+            alert('切り替え処理に失敗しました: ' + response.error);
+            await updateSettingsUI();
+        }
+    } catch (error) {
+        console.error('Failed to toggle encryption option:', error);
+        alert('エラーが発生しました: ' + error.message);
+        await updateSettingsUI();
+    }
+}
+
+export async function syncNow() {
+    const btn = elements.btnSyncNow || document.getElementById('btn-sync-now');
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '同期中...';
+    }
+
+    try {
+        // 1. プル同期を実行して他デバイスの最新変更をローカルにマージ
+        const pullResult = await sendMessage({ action: 'autoSyncPull' });
+        if (!pullResult.success) {
+            throw new Error(pullResult.error);
+        }
+
+        // 2. プッシュ同期を実行して最新のローカルデータをクラウドへアップロード
+        const pushResult = await sendMessage({ action: 'syncPush' });
+        if (!pushResult.success) {
+            throw new Error(pushResult.error);
+        }
+
+        // 最終同期時刻を保存
+        await sendMessage({ action: 'saveLastSyncTime', time: Date.now() });
+
+        // 3. UIの更新
+        await loadCollections();
+        await updateSettingsUI();
+
+        alert('同期が完了しました');
+    } catch (error) {
+        console.error('Manual sync failed:', error);
+        alert('同期に失敗しました: ' + error.message);
+    } finally {
+    }
+}
+
+export async function syncNowFromHeader() {
+    const btn = elements.btnSyncHeader || document.getElementById('btn-sync-header');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('rotating');
+    }
+
+    try {
+        // 1. プル同期を実行して他デバイスの最新変更をローカルにマージ
+        const pullResult = await sendMessage({ action: 'autoSyncPull' });
+        if (!pullResult.success) {
+            throw new Error(pullResult.error);
+        }
+
+        // 2. プッシュ同期を実行して最新のローカルデータをクラウドへアップロード
+        const pushResult = await sendMessage({ action: 'syncPush' });
+        if (!pushResult.success) {
+            throw new Error(pushResult.error);
+        }
+
+        // 最終同期時刻を保存
+        await sendMessage({ action: 'saveLastSyncTime', time: Date.now() });
+
+        // 3. UIの更新
+        await loadCollections();
+        await updateSettingsUI();
+
+        // ヘッダーでの同期成功時はアラートを出さずスムーズにUIの更新のみを行います
+    } catch (error) {
+        console.error('Header sync failed:', error);
+        alert('同期に失敗しました: ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('rotating');
+        }
+    }
 }

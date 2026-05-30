@@ -5,6 +5,7 @@
  */
 
 import { state } from './panel-state.js';
+import { resizeImageToWebp } from './image-cache-helper.js';
 
 // SVG Icons - Monotone Technical
 const ICONS = {
@@ -45,7 +46,7 @@ export function renderCollectionsList(elements, onOpenCollection) {
         const itemCount = collection.itemCount ?? collection.items?.length ?? 0;
         const firstImage = collection.firstImage;
         const thumbContent = firstImage?.imageUrl
-            ? `<img src="${escapeHtml(firstImage.imageUrl)}" alt="">`
+            ? `<img data-original-src="${escapeHtml(firstImage.imageUrl)}" alt="" referrerpolicy="no-referrer">`
             : ICONS.FOLDER;
 
         return `
@@ -65,6 +66,8 @@ export function renderCollectionsList(elements, onOpenCollection) {
             onOpenCollection(card.dataset.id);
         });
     });
+
+    applyImageCaches(container);
 }
 
 /**
@@ -146,6 +149,8 @@ export function renderItems(elements, setupDragAndDrop) {
 
     // Setup drag and drop
     if (setupDragAndDrop) setupDragAndDrop();
+
+    applyImageCaches(container);
 }
 
 /**
@@ -170,7 +175,7 @@ export function renderItem(item) {
 
         case 'image':
             thumbContent = item.imageUrl
-                ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy">`
+                ? `<img data-original-src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
                 : `<span class="icon">${ICONS.IMAGE}</span>`;
             content = `
         <div class="item-title"><a href="${escapeHtml(item.url || item.sourceUrl)}" target="_blank">${escapeHtml(item.title || '画像')}</a></div>
@@ -238,4 +243,103 @@ function getDomain(url) {
     } catch {
         return url;
     }
+}
+
+let imageCacheObserver = null;
+let pendingImageBatch = [];
+let imageBatchTimeout = null;
+
+/**
+ * 監視中の画像バッチを一括処理します
+ */
+async function processPendingImageBatch() {
+    if (pendingImageBatch.length === 0) return;
+    
+    const batch = [...pendingImageBatch];
+    pendingImageBatch = [];
+    imageBatchTimeout = null;
+    
+    const urls = Array.from(new Set(batch.map(item => item.url)));
+    
+    try {
+        const response = await chrome.runtime.sendMessage({ action: 'getImageCachesBulk', urls });
+        const cacheMap = (response && response.success && response.data) ? response.data : {};
+        
+        batch.forEach(async (item) => {
+            const { img, url } = item;
+            const cachedData = cacheMap[url];
+            
+            if (cachedData) {
+                img.src = cachedData;
+            } else {
+                img.src = url;
+                
+                img.addEventListener('load', async function handleLoad() {
+                    img.removeEventListener('load', handleLoad);
+                    if (img.src.startsWith('data:')) return;
+                    
+                    try {
+                        console.log('Rendering: Creating new image cache for:', url);
+                        const resizedDataUrl = await resizeImageToWebp(url);
+                        await chrome.runtime.sendMessage({
+                            action: 'saveImageCache',
+                            url: url,
+                            dataUrl: resizedDataUrl
+                        });
+                    } catch (resizeErr) {
+                        console.warn('Rendering: Image resize failed:', resizeErr);
+                    }
+                }, { once: true });
+            }
+        });
+    } catch (err) {
+        console.error('Rendering: Failed to apply batched image caches:', err);
+        batch.forEach(item => {
+            item.img.src = item.url;
+        });
+    }
+}
+
+/**
+ * レンダリングされた画像要素に対してビューポート優先遅延キャッシュを適用します
+ */
+async function applyImageCaches(container) {
+    const images = container.querySelectorAll('img[data-original-src]');
+    if (images.length === 0) return;
+    
+    // オブザーバーのシングルトン初期化（上下300pxのマージンを設定して先回りロード）
+    if (!imageCacheObserver) {
+        imageCacheObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    const originalSrc = img.getAttribute('data-original-src');
+                    
+                    imageCacheObserver.unobserve(img);
+                    
+                    if (originalSrc) {
+                        // バッチキューに登録
+                        pendingImageBatch.push({ img, url: originalSrc });
+                        
+                        // 50ms のバッファリングを行い、一括送信
+                        if (imageBatchTimeout) clearTimeout(imageBatchTimeout);
+                        imageBatchTimeout = setTimeout(processPendingImageBatch, 50);
+                    }
+                }
+            });
+        }, {
+            root: null, // ビューポートを基準
+            rootMargin: '300px', // 上下300px手前で検知して先読み
+            threshold: 0.01
+        });
+    }
+    
+    // 画像要素の監視を開始
+    images.forEach(img => {
+        // すでにsrcが正常に設定されているものは再処理を避けるために監視しない
+        if (img.src && !img.src.includes('sidepanel.html') && img.src.startsWith('data:')) {
+            return;
+        }
+        imageCacheObserver.observe(img);
+    });
 }

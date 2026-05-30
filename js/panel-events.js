@@ -13,6 +13,9 @@ import { elements, showView, showModal, hideModal } from './panel-ui.js';
  */
 export function initEvents(handlers) {
     // Navigation
+    if (elements.btnSyncHeader) {
+        elements.btnSyncHeader.addEventListener('click', handlers.syncNowFromHeader);
+    }
     elements.btnThemeToggle.addEventListener('click', handlers.toggleTheme);
     elements.btnNewCollection.addEventListener('click', handlers.showCreateCollectionModal);
     elements.btnSettings.addEventListener('click', () => {
@@ -53,7 +56,12 @@ export function initEvents(handlers) {
     elements.btnExportCollection.addEventListener('click', () => {
         const collection = state.collections.find(c => c.id === state.currentCollectionId);
         if (collection && handlers.downloadFile) {
-            handlers.downloadFile(JSON.stringify(collection, null, 2), `${collection.name}.json`, 'application/json');
+            // アイテムの配列を結合して完全なオブジェクトにする
+            const fullCollection = {
+                ...collection,
+                items: state.currentItems || []
+            };
+            handlers.downloadFile(JSON.stringify(fullCollection, null, 2), `${collection.name}.json`, 'application/json');
         }
         hideModal(elements.modalCollectionMenu);
     });
@@ -67,10 +75,18 @@ export function initEvents(handlers) {
     elements.btnMenuCancel.addEventListener('click', () => hideModal(elements.modalCollectionMenu));
 
     // Settings
-    if (elements.btnImportPaste) {
-        elements.btnImportPaste.addEventListener('click', () => {
-            if (handlers.importFromText) {
-                handlers.importFromText();
+    if (elements.btnExportAll) {
+        elements.btnExportAll.addEventListener('click', () => {
+            if (handlers.exportAllCollections) {
+                handlers.exportAllCollections();
+            }
+        });
+    }
+
+    if (elements.btnImportFile) {
+        elements.btnImportFile.addEventListener('click', () => {
+            if (handlers.importFromFiles) {
+                handlers.importFromFiles();
             }
         });
     }
@@ -79,6 +95,14 @@ export function initEvents(handlers) {
         elements.btnRebuildFromBookmarks.addEventListener('click', () => {
             if (handlers.rebuildFromBookmarks) {
                 handlers.rebuildFromBookmarks();
+            }
+        });
+    }
+
+    if (elements.btnSyncNow) {
+        elements.btnSyncNow.addEventListener('click', () => {
+            if (handlers.syncNow) {
+                handlers.syncNow();
             }
         });
     }
@@ -109,6 +133,14 @@ export function initEvents(handlers) {
             // 新しいルートフォルダからデータを引き込む
             if (handlers.autoSyncPull) await handlers.autoSyncPull();
             if (handlers.loadCollections) await handlers.loadCollections();
+        });
+    }
+
+    if (elements.settingEncryptEnabled) {
+        elements.settingEncryptEnabled.addEventListener('change', async (e) => {
+            if (handlers.toggleEncryptOption) {
+                await handlers.toggleEncryptOption(e.target.checked);
+            }
         });
     }
 

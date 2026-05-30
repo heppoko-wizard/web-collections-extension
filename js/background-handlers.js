@@ -1,18 +1,22 @@
 // js/background-handlers.js
 
-/**
- * background-handlers.js - メッセージハンドラの定義
- */
-
 import { CollectionStorage } from './storage.js';
-import { BookmarkSync } from './bookmark-sync.js';
+import { GoogleDriveSync } from './google-drive-sync.js';
+import { getImageHash, getLocalCache, saveLocalCache, getLocalCachesBulk } from './image-cache-helper.js';
+import { decrypt } from './encryption-helper.js';
 
 /**
- * 自動同期をスケジュール（Service Worker対応）
+ * 同期排他ロックの状態をチェックします
+ */
+async function isSyncLocked() {
+    const result = await chrome.storage.local.get('wc_sync_lock');
+    return !!result.wc_sync_lock;
+}
+
+/**
+ * 自動同期をスケジュールします
  */
 async function scheduleAutoSync() {
-    // setTimeout は MV3 Service Worker のサスペンド時に破棄されるため、chrome.alarms を使用する
-    // deferred-auto-sync-push ハンドラは background.js に実装済み
     chrome.alarms.create('deferred-auto-sync-push', { delayInMinutes: 0.5 });
 }
 
@@ -21,8 +25,19 @@ async function scheduleAutoSync() {
  */
 export async function executeAutoSyncPush() {
     console.log('Background: Executing scheduled auto-sync...');
+    if (await isSyncLocked()) {
+        console.log('Background: Auto-sync push bypassed due to lock');
+        return;
+    }
     try {
-        await BookmarkSync.push(CollectionStorage);
+        // 自動同期のため、対話的認証ダイアログは非アクティブ (interactive = false) に設定します
+        await GoogleDriveSync.push(CollectionStorage, false, false);
+        
+        // プッシュ成功時に lastSyncTime を自動更新して保存します
+        const settings = await CollectionStorage.getSettings();
+        settings.lastSyncTime = Date.now();
+        await CollectionStorage.saveSettings(settings);
+        
         console.log('Background: Auto-sync success');
     } catch (error) {
         console.error('Background: Auto-sync failed:', error);
@@ -30,7 +45,7 @@ export async function executeAutoSyncPush() {
 }
 
 /**
- * メッセージを処理し、適切なアクションを実行する
+ * メッセージを処理し、適切なアクションを実行します
  */
 export async function handleMessage(message, setupContextMenus) {
     let response = { success: true };
@@ -95,9 +110,35 @@ export async function handleMessage(message, setupContextMenus) {
             break;
 
         case 'importJson':
+        case 'importFromJson': {
             await CollectionStorage.importFromJson(message.data);
+            
+            // インポートされた過去データを確実に同期するため、lastSyncTime を一時的にリセットします
+            const settings = await CollectionStorage.getSettings();
+            const originalLastSyncTime = settings.lastSyncTime;
+            settings.lastSyncTime = 0;
+            await CollectionStorage.saveSettings(settings);
+            
+            try {
+                // 強制的に全件プッシュ同期を実行して即時アップロードを行います
+                await GoogleDriveSync.push(CollectionStorage, true);
+                
+                // 成功したら、最終同期時刻を現在時刻に更新します
+                const updatedSettings = await CollectionStorage.getSettings();
+                updatedSettings.lastSyncTime = Date.now();
+                await CollectionStorage.saveSettings(updatedSettings);
+            } catch (syncError) {
+                console.error('Immediate sync push after import failed:', syncError);
+                // 同期エラーが発生した場合は元の lastSyncTime に戻して次回リトライ可能にします
+                const rollbackSettings = await CollectionStorage.getSettings();
+                rollbackSettings.lastSyncTime = originalLastSyncTime;
+                await CollectionStorage.saveSettings(rollbackSettings);
+                throw syncError;
+            }
+
             if (setupContextMenus) setupContextMenus();
             break;
+        }
 
         case 'importCollection':
             await CollectionStorage.importCollectionData(message.data);
@@ -116,11 +157,12 @@ export async function handleMessage(message, setupContextMenus) {
             response.data = await CollectionStorage.getSettings();
             break;
 
-        case 'saveLastSyncTime':
+        case 'saveLastSyncTime': {
             const settings = await CollectionStorage.getSettings();
             settings.lastSyncTime = message.time;
             await CollectionStorage.saveSettings(settings);
             break;
+        }
 
         case 'saveSettings':
             await CollectionStorage.saveSettings(message.settings);
@@ -129,11 +171,116 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'syncPush':
             try {
-                await BookmarkSync.push(CollectionStorage);
+                if (await isSyncLocked()) {
+                    return { success: false, error: 'Sync is locked during migration' };
+                }
+                await GoogleDriveSync.push(CollectionStorage);
                 return { success: true };
             } catch (error) {
                 return { success: false, error: error.message };
             }
+        
+        case 'getImageCache': {
+            const hash = await getImageHash(message.url);
+            let cachedData = await getLocalCache(hash);
+            
+            if (!cachedData) {
+                try {
+                    const file = await GoogleDriveSync.findImageCacheFileByHash(hash);
+                    if (file) {
+                        console.log(`Background: Ondemand downloading image cache: ${hash}`);
+                        const encryptedData = await GoogleDriveSync.downloadImageCache(file.id);
+                        cachedData = await decrypt(encryptedData);
+                        await saveLocalCache(hash, cachedData);
+                    }
+                } catch (driveErr) {
+                    console.error('Background: Ondemand image download failed:', driveErr);
+                }
+            }
+            
+            response.data = cachedData;
+            break;
+        }
+
+        case 'getImageCachesBulk': {
+            const urls = message.urls || [];
+            const results = {};
+            
+            // すべてのURLに対応するハッシュ値を算出
+            const hashMap = new Map();
+            const hashes = [];
+            for (const url of urls) {
+                const hash = await getImageHash(url);
+                hashMap.set(hash, url);
+                hashes.push(hash);
+            }
+            
+            // ローカルキャッシュから一括取得
+            const localCaches = await getLocalCachesBulk(hashes);
+            
+            // キャッシュが見つからなかったハッシュのリスト
+            const missingHashes = hashes.filter(hash => !localCaches[hash]);
+            
+            // URLをキーにした結果マップに変換して返却
+            for (const [hash, url] of hashMap.entries()) {
+                if (localCaches[hash]) {
+                    results[url] = localCaches[hash];
+                }
+            }
+            
+            // 即座にレスポンスを返して同期ブロッキングを完全に回避
+            response.data = results;
+            
+            // 不足している画像は非同期にバックグラウンドでダウンロードを実行
+            if (missingHashes.length > 0) {
+                (async () => {
+                    try {
+                        const pullResult = await GoogleDriveSync.pullImageIndex();
+                        const cloudIndex = pullResult.data;
+                        
+                        if (cloudIndex && cloudIndex.images) {
+                            const downloadTasks = [];
+                            for (const hash of missingHashes) {
+                                if (cloudIndex.images[hash]) {
+                                    downloadTasks.push({ hash, fileId: cloudIndex.images[hash].fileId });
+                                }
+                            }
+                            
+                            if (downloadTasks.length > 0) {
+                                const maxConcurrency = 3;
+                                const queue = [...downloadTasks];
+                                const runDownload = async () => {
+                                    while (queue.length > 0) {
+                                        const item = queue.shift();
+                                        try {
+                                            console.log(`Background: Non-blocking downloading image cache: ${item.hash}`);
+                                            const encryptedData = await GoogleDriveSync.downloadImageCache(item.fileId);
+                                            const cachedData = await decrypt(encryptedData);
+                                            await saveLocalCache(item.hash, cachedData);
+                                        } catch (err) {
+                                            console.error(`Background: Non-blocking bulk ondemand download failed for ${item.hash}:`, err);
+                                        }
+                                    }
+                                };
+                                
+                                const workers = Array(Math.min(maxConcurrency, queue.length)).fill(null).map(runDownload);
+                                await Promise.all(workers);
+                            }
+                        }
+                    } catch (driveErr) {
+                        console.error('Background: Non-blocking bulk download background task failed:', driveErr);
+                    }
+                })();
+            }
+            break;
+        }
+
+        case 'saveImageCache': {
+            const hash = await getImageHash(message.url);
+            await saveLocalCache(hash, message.dataUrl);
+            GoogleDriveSync.uploadImageOnRegistration(hash, message.dataUrl, message.url);
+            break;
+        }
 
         case 'autoSyncPush':
             scheduleAutoSync();
@@ -141,14 +288,23 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'autoSyncPull':
             try {
-                const result = await BookmarkSync.pull(CollectionStorage);
+                if (await isSyncLocked()) {
+                    console.log('Background: Auto-sync pull bypassed due to lock');
+                    return { success: true, updated: false };
+                }
+                const interactive = message.interactive !== false;
+                const result = await GoogleDriveSync.pull(CollectionStorage, interactive);
                 if (result.success && result.updated && setupContextMenus) {
                     setupContextMenus();
                 }
-                return result; // Returns { success: true, updated: boolean }
+                return result;
             } catch (error) {
                 return { success: false, error: error.message };
             }
+
+        case 'migrateEncryption': {
+            return { success: true };
+        }
 
         default:
             return { success: false, error: 'Unknown action: ' + message.action };
@@ -158,7 +314,7 @@ export async function handleMessage(message, setupContextMenus) {
 }
 
 /**
- * ブックマークフォルダを階層パス付きで再帰的に取得する
+ * ブックマークフォルダを階層パス付きで再帰的に取得します
  */
 async function getBookmarkFolders() {
     if (!chrome.bookmarks) {
@@ -192,4 +348,3 @@ async function getBookmarkFolders() {
     tree.forEach(node => traverse(node));
     return folders;
 }
-

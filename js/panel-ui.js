@@ -22,6 +22,7 @@ export function initElements() {
     elements.collectionTitle = document.getElementById('collection-title');
 
     // Buttons
+    elements.btnSyncHeader = document.getElementById('btn-sync-header');
     elements.btnThemeToggle = document.getElementById('btn-theme-toggle');
     elements.iconSun = document.getElementById('icon-sun');
     elements.iconMoon = document.getElementById('icon-moon');
@@ -38,14 +39,17 @@ export function initElements() {
 
     // Settings
     elements.lastSyncTime = document.getElementById('last-sync-time');
-    elements.importJsonTextarea = document.getElementById('import-json-textarea');
-    elements.btnImportPaste = document.getElementById('btn-import-paste');
+    elements.importJsonFile = document.getElementById('import-json-file');
+    elements.btnImportFile = document.getElementById('btn-import-file');
+    elements.btnExportAll = document.getElementById('btn-export-all');
     elements.btnRebuildFromBookmarks = document.getElementById('btn-rebuild-from-bookmarks');
+    elements.btnSyncNow = document.getElementById('btn-sync-now');
 
     // Settings Inputs
     elements.settingTileWidth = document.getElementById('setting-tile-width');
     elements.tileWidthValue = document.getElementById('tile-width-value');
     elements.settingBookmarkRoot = document.getElementById('setting-bookmark-root');
+    elements.settingEncryptEnabled = document.getElementById('setting-encrypt-enabled');
 
     // Modals
     elements.modalCreateCollection = document.getElementById('modal-create-collection');

@@ -32,7 +32,8 @@ async function init() {
         loadCollections: Actions.loadCollections,
         openCollection: Actions.openCollection,
         downloadFile: Actions.downloadFile,
-        importFromText: Actions.importFromText,
+        importFromFiles: Actions.importFromFiles,
+        exportAllCollections: Actions.exportAllCollections,
         updateSettingsUI: Actions.updateSettingsUI,
         toggleLayout: Actions.toggleLayout,
         addItemMemo: Actions.addItemMemo,
@@ -40,7 +41,10 @@ async function init() {
         deleteItem: Actions.deleteItem,
         copyCollectionJson: Actions.copyCollectionJson,
         autoSyncPull: Actions.autoSyncPull,
-        rebuildFromBookmarks: Actions.rebuildFromBookmarks
+        rebuildFromBookmarks: Actions.rebuildFromBookmarks,
+        toggleEncryptOption: Actions.toggleEncryptOption,
+        syncNow: Actions.syncNow,
+        syncNowFromHeader: Actions.syncNowFromHeader
     });
 
     // 3. 初期データのロード
