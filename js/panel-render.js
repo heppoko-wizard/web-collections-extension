@@ -5,7 +5,7 @@
  */
 
 import { state } from './panel-state.js';
-import { resizeImageToWebp } from './image-cache-helper.js';
+import { resizeImageToWebp, getImageHash } from './image-cache-helper.js';
 
 // SVG Icons - Monotone Technical
 const ICONS = {
@@ -151,6 +151,42 @@ export function renderItems(elements, setupDragAndDrop) {
     if (setupDragAndDrop) setupDragAndDrop();
 
     applyImageCaches(container);
+
+    // 初期表示時に最初の20件をプリフェッチ
+    prefetchImagesAroundViewport(state.currentCollectionId, 0, 20);
+
+    // スクロール時に前後20件のプリフェッチをトリガーする
+    if (!scrollContainer.dataset.hasScrollPrefetchListener) {
+        let scrollTimeout = null;
+        scrollContainer.addEventListener('scroll', () => {
+            if (scrollTimeout) clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                const cards = Array.from(container.querySelectorAll('.item-card'));
+                if (cards.length === 0) return;
+
+                const containerRect = scrollContainer.getBoundingClientRect();
+                const containerCenter = containerRect.top + containerRect.height / 2;
+
+                // ビューポート中央付近にあるカードを特定する
+                let centerCardIndex = 0;
+                let minDistance = Infinity;
+
+                cards.forEach((card, index) => {
+                    const rect = card.getBoundingClientRect();
+                    const cardCenter = rect.top + rect.height / 2;
+                    
+                    const distance = Math.abs(cardCenter - containerCenter);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        centerCardIndex = index;
+                    }
+                });
+
+                prefetchImagesAroundViewport(state.currentCollectionId, centerCardIndex, 20);
+            }, 200);
+        });
+        scrollContainer.dataset.hasScrollPrefetchListener = 'true';
+    }
 }
 
 /**
@@ -246,40 +282,131 @@ function getDomain(url) {
 }
 
 let imageCacheObserver = null;
-let pendingImageBatch = [];
-let imageBatchTimeout = null;
 
 /**
- * 監視中の画像バッチを一括処理します
+ * 画像を指定の優先順位であるキャッシュ、直リンク、ドライブでロードし、結果を画像要素へ適用します
+ * @param {HTMLImageElement} img - 対象の画像要素
+ * @param {string} url - 画像のオリジナルURL
  */
-async function processPendingImageBatch() {
-    if (pendingImageBatch.length === 0) return;
+async function loadAndFallbackImage(img, url) {
+    if (!url) return;
+    const hash = await getImageHash(url);
     
-    const batch = [...pendingImageBatch];
-    pendingImageBatch = [];
-    imageBatchTimeout = null;
-    
-    const urls = Array.from(new Set(batch.map(item => item.url)));
-    
+    // すでに処理済みであればスキップする
+    if (img.src && img.src.startsWith('data:') && !img.src.includes('sidepanel.html')) {
+        return;
+    }
+
+    // 段階1：ローカルキャッシュ
     try {
-        const response = await chrome.runtime.sendMessage({ action: 'getImageCachesBulk', urls });
-        const cacheMap = (response && response.success && response.data) ? response.data : {};
-        
-        batch.forEach(async (item) => {
-            const { img, url } = item;
-            const cachedData = cacheMap[url];
-            
-            if (cachedData) {
-                img.src = cachedData;
-            } else {
+        const response = await chrome.runtime.sendMessage({ action: 'getLocalCache', hash });
+        if (response && response.success && response.data) {
+            img.src = response.data;
+            return;
+        }
+    } catch (err) {
+        console.warn('Rendering: Local cache read failed:', err);
+    }
+
+    // 段階2：直リンク
+    const isLocalCacheUrl = url.startsWith('local-cache://');
+    if (!isLocalCacheUrl) {
+        try {
+            const isLoaded = await new Promise((resolve) => {
+                const temp = new Image();
+                temp.onload = () => resolve(true);
+                temp.onerror = () => resolve(false);
+                temp.src = url;
+            });
+
+            if (isLoaded) {
                 img.src = url;
-                
-                img.addEventListener('load', async function handleLoad() {
-                    img.removeEventListener('load', handleLoad);
-                    if (img.src.startsWith('data:')) return;
-                    
+                try {
+                    const resizedDataUrl = await resizeImageToWebp(url);
+                    await chrome.runtime.sendMessage({
+                        action: 'saveImageCache',
+                        url: url,
+                        dataUrl: resizedDataUrl
+                    });
+                } catch (resizeErr) {
+                    console.warn('Rendering: Failed to resize and cache direct image:', resizeErr);
+                }
+                return;
+            }
+        } catch (err) {
+            console.warn('Rendering: Direct link load failed for:', url, err);
+        }
+    }
+
+    // 段階3：ドライブ
+    try {
+        const response = await chrome.runtime.sendMessage({ action: 'getImageCacheFromDrive', hash });
+        if (response && response.success && response.data) {
+            img.src = response.data;
+            return;
+        }
+    } catch (err) {
+        console.error('Rendering: Google Drive image fallback failed:', err);
+    }
+
+    // すべて失敗した場合は透明なプレースホルダーを設定する
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+}
+
+/**
+ * ビューポートの中心位置付近にあるアイテムを特定し、その前後20件の画像を非同期でプリフェッチします
+ * @param {string} collectionId - 対象のコレクションID
+ * @param {number} centerIndex - 基準となる表示インデックス
+ * @param {number} range - 前後の取得件数
+ */
+export async function prefetchImagesAroundViewport(collectionId, centerIndex = 0, range = 20) {
+    const collection = state.collections.find(c => c.id === collectionId);
+    if (!collection) return;
+
+    const items = state.currentItems || [];
+    if (items.length === 0) return;
+
+    const start = Math.max(0, centerIndex - range);
+    const end = Math.min(items.length - 1, centerIndex + range);
+
+    console.log(`Rendering: Prefetching images in range ${start} to ${end} for collection ${collectionId}`);
+
+    const targets = [];
+    for (let i = start; i <= end; i++) {
+        const item = items[i];
+        if (!item || item.isDeleted) continue;
+        
+        let imageUrl = null;
+        if (item.type === 'image') {
+            imageUrl = item.imageUrl || item.content;
+        } else if (item.imageUrl) {
+            imageUrl = item.imageUrl;
+        }
+
+        if (imageUrl && !imageUrl.startsWith('data:')) {
+            targets.push(imageUrl);
+        }
+    }
+
+    const uniqueUrls = Array.from(new Set(targets));
+
+    uniqueUrls.forEach(async (url) => {
+        const hash = await getImageHash(url);
+        
+        try {
+            const cacheResponse = await chrome.runtime.sendMessage({ action: 'getLocalCache', hash });
+            if (cacheResponse && cacheResponse.success && cacheResponse.data) {
+                return;
+            }
+        } catch (e) {
+            console.warn('Prefetch: Local cache check failed:', e);
+        }
+
+        if (!url.startsWith('local-cache://')) {
+            try {
+                const temp = new Image();
+                temp.onload = async () => {
                     try {
-                        console.log('Rendering: Creating new image cache for:', url);
                         const resizedDataUrl = await resizeImageToWebp(url);
                         await chrome.runtime.sendMessage({
                             action: 'saveImageCache',
@@ -287,17 +414,22 @@ async function processPendingImageBatch() {
                             dataUrl: resizedDataUrl
                         });
                     } catch (resizeErr) {
-                        console.warn('Rendering: Image resize failed:', resizeErr);
+                        console.warn('Prefetch: Resize failed:', resizeErr);
                     }
-                }, { once: true });
+                };
+                temp.src = url;
+                return;
+            } catch (err) {
+                console.warn('Prefetch: Direct load failed:', err);
             }
-        });
-    } catch (err) {
-        console.error('Rendering: Failed to apply batched image caches:', err);
-        batch.forEach(item => {
-            item.img.src = item.url;
-        });
-    }
+        }
+
+        try {
+            await chrome.runtime.sendMessage({ action: 'getImageCacheFromDrive', hash });
+        } catch (driveErr) {
+            console.error('Prefetch: Drive download failed:', driveErr);
+        }
+    });
 }
 
 /**
@@ -307,7 +439,6 @@ async function applyImageCaches(container) {
     const images = container.querySelectorAll('img[data-original-src]');
     if (images.length === 0) return;
     
-    // オブザーバーのシングルトン初期化（上下300pxのマージンを設定して先回りロード）
     if (!imageCacheObserver) {
         imageCacheObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
@@ -318,25 +449,18 @@ async function applyImageCaches(container) {
                     imageCacheObserver.unobserve(img);
                     
                     if (originalSrc) {
-                        // バッチキューに登録
-                        pendingImageBatch.push({ img, url: originalSrc });
-                        
-                        // 50ms のバッファリングを行い、一括送信
-                        if (imageBatchTimeout) clearTimeout(imageBatchTimeout);
-                        imageBatchTimeout = setTimeout(processPendingImageBatch, 50);
+                        loadAndFallbackImage(img, originalSrc);
                     }
                 }
             });
         }, {
-            root: null, // ビューポートを基準
-            rootMargin: '300px', // 上下300px手前で検知して先読み
+            root: null,
+            rootMargin: '300px',
             threshold: 0.01
         });
     }
     
-    // 画像要素の監視を開始
     images.forEach(img => {
-        // すでにsrcが正常に設定されているものは再処理を避けるために監視しない
         if (img.src && !img.src.includes('sidepanel.html') && img.src.startsWith('data:')) {
             return;
         }

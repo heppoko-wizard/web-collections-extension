@@ -3,6 +3,8 @@
  * コレクションデータのCRUD操作を提供
  */
 
+import { getImageHash, saveLocalCache } from './image-cache-helper.js';
+
 export const CollectionStorage = {
     // 互換性のためのダミー定義
     async openDB() {
@@ -166,6 +168,35 @@ export const CollectionStorage = {
         if (colIndex === -1) throw new Error('Collection not found');
 
         const col = collections[colIndex];
+
+        // 混入防止ガード：imageUrl が Base64画像の場合
+        if (item.imageUrl && item.imageUrl.startsWith('data:image/')) {
+            const dataUrl = item.imageUrl;
+            const hash = await getImageHash(dataUrl);
+            await saveLocalCache(hash, dataUrl);
+            item.imageUrl = `local-cache://${hash}`;
+            
+            chrome.runtime.sendMessage({
+                action: 'saveImageCache',
+                url: item.url || '',
+                dataUrl: dataUrl
+            }).catch(err => console.warn('Storage: Failed to send saveImageCache message:', err));
+        }
+
+        // 混入防止ガード：imageアイテムの content が Base64画像の場合
+        if (item.type === 'image' && item.content && item.content.startsWith('data:image/')) {
+            const dataUrl = item.content;
+            const hash = await getImageHash(dataUrl);
+            await saveLocalCache(hash, dataUrl);
+            item.content = `local-cache://${hash}`;
+            
+            chrome.runtime.sendMessage({
+                action: 'saveImageCache',
+                url: item.url || '',
+                dataUrl: dataUrl
+            }).catch(err => console.warn('Storage: Failed to send saveImageCache message:', err));
+        }
+
         const newItem = {
             id: this.generateId(),
             collectionId: collectionId,
@@ -250,6 +281,34 @@ export const CollectionStorage = {
         const items = col.items || [];
         const itemIndex = items.findIndex(i => i.id === itemId);
         if (itemIndex === -1) throw new Error('Item not found');
+
+        // 混入防止ガード：imageUrl が Base64画像の場合
+        if (updates.imageUrl && updates.imageUrl.startsWith('data:image/')) {
+            const dataUrl = updates.imageUrl;
+            const hash = await getImageHash(dataUrl);
+            await saveLocalCache(hash, dataUrl);
+            updates.imageUrl = `local-cache://${hash}`;
+            
+            chrome.runtime.sendMessage({
+                action: 'saveImageCache',
+                url: updates.url || items[itemIndex].url || '',
+                dataUrl: dataUrl
+            }).catch(err => console.warn('Storage: Failed to send saveImageCache message:', err));
+        }
+
+        // 混入防止ガード：imageアイテムの content が Base64画像の場合
+        if (updates.type === 'image' && updates.content && updates.content.startsWith('data:image/')) {
+            const dataUrl = updates.content;
+            const hash = await getImageHash(dataUrl);
+            await saveLocalCache(hash, dataUrl);
+            updates.content = `local-cache://${hash}`;
+            
+            chrome.runtime.sendMessage({
+                action: 'saveImageCache',
+                url: updates.url || items[itemIndex].url || '',
+                dataUrl: dataUrl
+            }).catch(err => console.warn('Storage: Failed to send saveImageCache message:', err));
+        }
 
         const updated = {
             ...items[itemIndex],
@@ -373,23 +432,22 @@ export const CollectionStorage = {
                         isDeleted: item.isDeleted || false
                     }));
 
+                    const localItemMap = new Map(localItems.map(i => [i.id, i]));
+
                     for (const impItem of formattedItems) {
-                        const itemIdx = localItems.findIndex(i => i.id === impItem.id);
-                        if (itemIdx !== -1) {
-                            // 重複するアイテムIDがある場合は、更新日時が新しい方を優先してマージ
-                            const localItem = localItems[itemIdx];
+                        const localItem = localItemMap.get(impItem.id);
+                        if (localItem) {
                             if (impItem.updatedAt > (localItem.updatedAt || 0)) {
-                                localItems[itemIdx] = {
+                                localItemMap.set(impItem.id, {
                                     ...localItem,
                                     ...impItem
-                                };
+                                });
                             }
                         } else {
-                            // 新規アイテムは追加
-                            localItems.push(impItem);
+                            localItemMap.set(impItem.id, impItem);
                         }
                     }
-                    existingCol.items = localItems;
+                    existingCol.items = Array.from(localItemMap.values());
                 }
                 // itemsが未定義の場合は既存のアイテムを保持する
             } else {
@@ -478,21 +536,22 @@ export const CollectionStorage = {
                     isDeleted: item.isDeleted || false
                 }));
 
+                const localItemMap = new Map(localItems.map(i => [i.id, i]));
+
                 for (const impItem of newItems) {
-                    const itemIdx = localItems.findIndex(i => i.id === impItem.id);
-                    if (itemIdx !== -1) {
-                        const localItem = localItems[itemIdx];
+                    const localItem = localItemMap.get(impItem.id);
+                    if (localItem) {
                         if (impItem.updatedAt > (localItem.updatedAt || 0)) {
-                            localItems[itemIdx] = {
+                            localItemMap.set(impItem.id, {
                                 ...localItem,
                                 ...impItem
-                            };
+                            });
                         }
                     } else {
-                        localItems.push(impItem);
+                        localItemMap.set(impItem.id, impItem);
                     }
                 }
-                existingCol.items = localItems;
+                existingCol.items = Array.from(localItemMap.values());
             }
         } else {
             // 新規コレクションとして追加
@@ -516,5 +575,42 @@ export const CollectionStorage = {
 
         await this._saveCollectionsRaw(collections);
         return true;
+    },
+
+    /**
+     * 論理削除されたアイテムおよびコレクションを物理削除してストレージを軽量化します
+     * @param {number} daysThreshold - 猶予日数
+     */
+    async purgeDeletedData(daysThreshold = 30) {
+        const collections = await this._getCollectionsRaw();
+        const thresholdTime = Date.now() - (daysThreshold * 24 * 60 * 60 * 1000);
+        let modified = false;
+
+        const remainingCollections = collections.filter(c => {
+            if (c.isDeleted && (c.updatedAt || 0) < thresholdTime) {
+                modified = true;
+                return false;
+            }
+            return true;
+        });
+
+        for (const col of remainingCollections) {
+            if (col.items && Array.isArray(col.items)) {
+                const originalLength = col.items.length;
+                col.items = col.items.filter(item => {
+                    return !(item.isDeleted && (item.updatedAt || 0) < thresholdTime);
+                });
+                if (col.items.length !== originalLength) {
+                    modified = true;
+                    col.updatedAt = Date.now();
+                }
+            }
+        }
+
+        if (modified) {
+            await this._saveCollectionsRaw(remainingCollections);
+            console.log('CollectionStorage: Expired deleted data physical purge executed.');
+        }
+        return modified;
     }
 };

@@ -5,6 +5,9 @@ import { GoogleDriveSync } from './google-drive-sync.js';
 import { getImageHash, getLocalCache, saveLocalCache, getLocalCachesBulk } from './image-cache-helper.js';
 import { decrypt } from './encryption-helper.js';
 
+// ドライブからの画像ダウンロード重複を防ぐためのマップ
+const driveDownloadPromises = new Map();
+
 /**
  * 同期排他ロックの状態をチェックします
  */
@@ -174,12 +177,49 @@ export async function handleMessage(message, setupContextMenus) {
                 if (await isSyncLocked()) {
                     return { success: false, error: 'Sync is locked during migration' };
                 }
-                await GoogleDriveSync.push(CollectionStorage);
-                return { success: true };
+                const result = await GoogleDriveSync.push(CollectionStorage);
+                return { success: true, report: result.report };
             } catch (error) {
                 return { success: false, error: error.message };
             }
         
+        case 'getLocalCache': {
+            response.data = await getLocalCache(message.hash);
+            break;
+        }
+
+        case 'getImageCacheFromDrive': {
+            const hash = message.hash;
+            if (driveDownloadPromises.has(hash)) {
+                response.data = await driveDownloadPromises.get(hash);
+                break;
+            }
+
+            const downloadPromise = (async () => {
+                let cachedData = null;
+                try {
+                    const file = await GoogleDriveSync.findImageCacheFileByHash(hash);
+                    if (file) {
+                        console.log(`Background: Ondemand downloading image cache from drive: ${hash}`);
+                        const encryptedData = await GoogleDriveSync.downloadImageCache(file.id);
+                        cachedData = await decrypt(encryptedData);
+                        await saveLocalCache(hash, cachedData);
+                    }
+                } catch (driveErr) {
+                    console.error('Background: Ondemand image download from drive failed:', driveErr);
+                }
+                return cachedData;
+            })();
+
+            driveDownloadPromises.set(hash, downloadPromise);
+            try {
+                response.data = await downloadPromise;
+            } finally {
+                driveDownloadPromises.delete(hash);
+            }
+            break;
+        }
+
         case 'getImageCache': {
             const hash = await getImageHash(message.url);
             let cachedData = await getLocalCache(hash);

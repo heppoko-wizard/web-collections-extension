@@ -581,11 +581,55 @@ export async function syncNow() {
         await loadCollections();
         await updateSettingsUI();
 
-        alert('同期が完了しました');
+        const pullReport = pullResult.report || {};
+        const pushReport = pushResult.report || {};
+        
+        let msg = '同期が完了しました。\n\n';
+        
+        msg += '▼ 受信同期（プル）詳細\n';
+        if (pullReport.totalTime !== undefined) {
+            msg += `・総時間: ${pullReport.totalTime} ms\n`;
+            msg += `・ファイル検索: ${pullReport.findFileTime || 0} ms\n`;
+            msg += `・ダウンロード: ${pullReport.downloadTime || 0} ms\n`;
+            msg += `・暗号復号: ${pullReport.decryptTime || 0} ms\n`;
+            msg += `・圧縮展開: ${pullReport.decompressTime || 0} ms\n`;
+            msg += `・マージ処理: ${pullReport.mergeTime || 0} ms\n`;
+        } else {
+            msg += '・更新なし\n';
+        }
+        
+        msg += '\n▼ 送信同期（プッシュ）詳細\n';
+        if (pushReport.skipped) {
+            msg += '・ローカル変更なしのため送信スキップ\n';
+        } else if (pushReport.totalTime !== undefined) {
+            msg += `・総時間: ${pushReport.totalTime} ms\n`;
+            msg += `・パージ処理: ${pushReport.purgeTime || 0} ms\n`;
+            msg += `・データ展開: ${pushReport.exportTime || 0} ms\n`;
+            msg += `・データ圧縮: ${pushReport.compressTime || 0} ms\n`;
+            msg += `・データ暗号: ${pushReport.encryptTime || 0} ms\n`;
+            msg += `・ファイル検索: ${pushReport.searchTime || 0} ms\n`;
+            msg += `・アップロード: ${pushReport.uploadTime || 0} ms\n`;
+        } else {
+            msg += '・処理スキップ\n';
+        }
+
+        msg += '\n※ このレポート内容は自動的にクリップボードへコピーされました。そのまま貼り付けが可能です。';
+
+        try {
+            await navigator.clipboard.writeText(msg);
+        } catch (clipErr) {
+            console.warn('Failed to copy sync report to clipboard:', clipErr);
+        }
+
+        alert(msg);
     } catch (error) {
         console.error('Manual sync failed:', error);
         alert('同期に失敗しました: ' + error.message);
     } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText || '今すぐ同期';
+        }
     }
 }
 

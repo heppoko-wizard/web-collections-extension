@@ -145,4 +145,119 @@ test('CollectionStorage - CRUD operations', async (t) => {
         const newItem = finalItems.find(i => i.id === 'item-2');
         assert.strictEqual(newItem.title, 'New Item');
     });
+
+    await t.test('importCollectionData safe merge', async () => {
+        mockStorage.clear();
+        const col = await CollectionStorage.createCollection('ImportCol');
+        
+        const collections = await CollectionStorage._getCollectionsRaw();
+        const targetCol = collections.find(c => c.id === col.id);
+        targetCol.items = [
+            {
+                id: 'item-a',
+                collectionId: col.id,
+                type: 'link',
+                url: 'https://example.com/a',
+                title: 'Item A',
+                updatedAt: 1000,
+                isDeleted: false
+            }
+        ];
+        await CollectionStorage._saveCollectionsRaw(collections);
+
+        const importData = {
+            id: col.id,
+            name: 'ImportCol Updated',
+            updatedAt: 2000,
+            items: [
+                {
+                    id: 'item-a',
+                    type: 'link',
+                    url: 'https://example.com/a-updated',
+                    title: 'Item A Updated',
+                    updatedAt: 2000
+                },
+                {
+                    id: 'item-b',
+                    type: 'link',
+                    url: 'https://example.com/b',
+                    title: 'Item B',
+                    updatedAt: 1500
+                }
+            ]
+        };
+
+        await CollectionStorage.importCollectionData(importData);
+
+        const items = await CollectionStorage.getItemsByCollection(col.id);
+        assert.strictEqual(items.length, 2);
+
+        const itemA = items.find(i => i.id === 'item-a');
+        assert.strictEqual(itemA.title, 'Item A Updated');
+        assert.strictEqual(itemA.url, 'https://example.com/a-updated');
+
+        const itemB = items.find(i => i.id === 'item-b');
+        assert.strictEqual(itemB.title, 'Item B');
+    });
+
+    await t.test('purgeDeletedData physically deletes old logical deleted records', async () => {
+        mockStorage.clear();
+
+        const colActive = await CollectionStorage.createCollection('Active Col');
+        const colDeletedNew = await CollectionStorage.createCollection('Deleted New');
+        const colDeletedOld = await CollectionStorage.createCollection('Deleted Old');
+
+        const collections = await CollectionStorage._getCollectionsRaw();
+        
+        const cActive = collections.find(c => c.id === colActive.id);
+        cActive.updatedAt = Date.now();
+        cActive.isDeleted = false;
+
+        const cDelNew = collections.find(c => c.id === colDeletedNew.id);
+        cDelNew.updatedAt = Date.now() - 10 * 24 * 60 * 60 * 1000;
+        cDelNew.isDeleted = true;
+
+        const cDelOld = collections.find(c => c.id === colDeletedOld.id);
+        cDelOld.updatedAt = Date.now() - 40 * 24 * 60 * 60 * 1000;
+        cDelOld.isDeleted = true;
+
+        cActive.items = [
+            {
+                id: 'item-active',
+                collectionId: colActive.id,
+                updatedAt: Date.now(),
+                isDeleted: false
+            },
+            {
+                id: 'item-del-new',
+                collectionId: colActive.id,
+                updatedAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
+                isDeleted: true
+            },
+            {
+                id: 'item-del-old',
+                collectionId: colActive.id,
+                updatedAt: Date.now() - 35 * 24 * 60 * 60 * 1000,
+                isDeleted: true
+            }
+        ];
+
+        await CollectionStorage._saveCollectionsRaw(collections);
+
+        const purged = await CollectionStorage.purgeDeletedData(30);
+        assert.strictEqual(purged, true);
+
+        const finalCollections = await CollectionStorage._getCollectionsRaw();
+        
+        assert.strictEqual(finalCollections.find(c => c.id === colDeletedOld.id), undefined);
+        assert.ok(finalCollections.find(c => c.id === colActive.id));
+        assert.ok(finalCollections.find(c => c.id === colDeletedNew.id));
+
+        const activeColRecord = finalCollections.find(c => c.id === colActive.id);
+        assert.strictEqual(activeColRecord.items.length, 2);
+        
+        assert.strictEqual(activeColRecord.items.find(i => i.id === 'item-del-old'), undefined);
+        assert.ok(activeColRecord.items.find(i => i.id === 'item-active'));
+        assert.ok(activeColRecord.items.find(i => i.id === 'item-del-new'));
+    });
 });

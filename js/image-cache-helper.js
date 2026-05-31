@@ -79,6 +79,9 @@ async function migrateFromStorageLocal() {
  */
 export async function getImageHash(url) {
     if (!url) return '';
+    if (url.startsWith('local-cache://')) {
+        return url.substring('local-cache://'.length);
+    }
     const encoder = new TextEncoder();
     const data = encoder.encode(url);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);

@@ -118,10 +118,116 @@ export const GoogleDriveSync = {
     },
 
     /**
+     * コレクションデータ内の巨大な埋め込み画像（Base64）を抽出し、
+     * 個別画像キャッシュへ退避させてJSONをダイエットさせます。
+     */
+    async cleanAndExtractEmbeddedImages(storage) {
+        console.log('GoogleDriveSync: Scanning for embedded Base64 images to cleanse JSON...');
+        const collections = await storage._getCollectionsRaw();
+        let modified = false;
+        const tasks = [];
+
+        for (const col of collections) {
+            if (col.items && Array.isArray(col.items)) {
+                for (const item of col.items) {
+                    if (item.imageUrl && item.imageUrl.startsWith('data:image/')) {
+                        const dataUrl = item.imageUrl;
+                        const hash = await getImageHash(dataUrl);
+                        
+                        console.log(`GoogleDriveSync: Found embedded imageUrl in item "${item.title || 'Untitled'}". Extracting...`);
+                        await saveLocalCache(hash, dataUrl);
+                        
+                        item.imageUrl = `local-cache://${hash}`;
+                        item.updatedAt = Date.now();
+                        col.updatedAt = Date.now();
+                        modified = true;
+                        
+                        tasks.push({ hash, dataUrl, url: item.url || '' });
+                    }
+
+                    if (item.type === 'image' && item.content && item.content.startsWith('data:image/')) {
+                        const dataUrl = item.content;
+                        const hash = await getImageHash(dataUrl);
+                        
+                        console.log(`GoogleDriveSync: Found embedded content image in item "${item.title || 'Untitled'}". Extracting...`);
+                        await saveLocalCache(hash, dataUrl);
+                        
+                        item.content = `local-cache://${hash}`;
+                        item.updatedAt = Date.now();
+                        col.updatedAt = Date.now();
+                        modified = true;
+                        
+                        tasks.push({ hash, dataUrl, url: item.url || '' });
+                    }
+                }
+            }
+        }
+
+        if (modified) {
+            await storage._saveCollectionsRaw(collections);
+            console.log('GoogleDriveSync: Local JSON successfully cleansed and lightweighted.');
+
+            (async () => {
+                console.log(`GoogleDriveSync: Starting background upload of ${tasks.length} cleansed images...`);
+                for (const task of tasks) {
+                    try {
+                        await this.uploadImageOnRegistration(task.hash, task.dataUrl, task.url);
+                    } catch (uploadErr) {
+                        console.error(`GoogleDriveSync: Failed to upload cleansed image in background for hash ${task.hash}:`, uploadErr);
+                    }
+                }
+                console.log('GoogleDriveSync: Background upload of cleansed images completed.');
+            })();
+        } else {
+            console.log('GoogleDriveSync: No embedded images detected. Clean.');
+        }
+
+        return modified;
+    },
+
+    /**
      * ローカルの全データを圧縮および暗号化してGoogleドライブへプッシュします
      */
     async push(storage, forceAll = false, interactive = true) {
         console.log('GoogleDriveSync: Pushing to Google Drive...');
+        const startTime = performance.now();
+        const report = {};
+        
+        try {
+            const cleanseStart = performance.now();
+            const cleansed = await this.cleanAndExtractEmbeddedImages(storage);
+            report.cleanseTime = Math.round(performance.now() - cleanseStart);
+            if (cleansed) {
+                console.log('GoogleDriveSync: Database was cleansed. Forcing upload.');
+                forceAll = true;
+            }
+
+            const purgeStart = performance.now();
+            // 猶予期間三十日を過ぎた論理削除データを物理パージして軽量化
+            await storage.purgeDeletedData(30);
+            report.purgeTime = Math.round(performance.now() - purgeStart);
+
+            // 不要なプッシュ同期のスキップチェック
+            if (!forceAll) {
+                const settings = await storage.getSettings();
+                const lastSyncTime = settings.lastSyncTime || 0;
+                
+                if (lastSyncTime > 0) {
+                    const collections = await storage._getCollectionsRaw();
+                    const hasLocalChanges = collections.some(c => (c.updatedAt || 0) > lastSyncTime);
+                    
+                    if (!hasLocalChanges) {
+                        console.log('GoogleDriveSync: No local changes since last sync. Skipping push.');
+                        report.skipped = true;
+                        report.totalTime = Math.round(performance.now() - startTime);
+                        return { success: true, report };
+                    }
+                }
+            }
+        } catch (purgeErr) {
+            console.warn('GoogleDriveSync: Failed to execute purge or change detection before push:', purgeErr);
+        }
+
         const maxRetries = 3;
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -135,16 +241,24 @@ export const GoogleDriveSync = {
             
             try {
                 // 1. ローカルデータベースから全データをJSONとしてエクスポート
+                const exportStart = performance.now();
                 const rawJson = await storage.exportToJson();
+                report.exportTime = Math.round(performance.now() - exportStart);
                 
                 // 2. ブラウザ標準の機能でGZIP圧縮を施しBase64にエンコード
+                const compressStart = performance.now();
                 const compressedBase64 = await this.compressData(rawJson);
+                report.compressTime = Math.round(performance.now() - compressStart);
                 
                 // 3. 圧縮データをAES-GCMで暗号化して堅牢なBase64暗号文を取得
+                const encryptStart = performance.now();
                 const encryptedData = await encrypt(compressedBase64);
+                report.encryptTime = Math.round(performance.now() - encryptStart);
                 
                 // 4. Googleドライブ内の既存ファイルを検索
+                const searchStart = performance.now();
                 const syncFile = await this.findSyncFile(interactive);
+                report.searchTime = Math.round(performance.now() - searchStart);
                 
                 const storageResult = await chrome.storage.local.get('wc_last_modified_time');
                 const lastModifiedTime = storageResult.wc_last_modified_time;
@@ -165,6 +279,7 @@ export const GoogleDriveSync = {
                     }
                     
                     // 既存ファイルが存在する場合はメディア上書き（PATCH）を実行
+                    const uploadStart = performance.now();
                     const uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${syncFile.id}?uploadType=media`;
                     
                     const headers = {
@@ -182,6 +297,8 @@ export const GoogleDriveSync = {
                         throw new Error(`Failed to update drive file: ${response.status} ${response.statusText} - ${errText}`);
                     }
                     
+                    report.uploadTime = Math.round(performance.now() - uploadStart);
+                    
                     // 成功したら新しい modifiedTime を取得して保存するため、再度検索を実行
                     const updatedFile = await this.findSyncFile(interactive);
                     const newModifiedTime = updatedFile ? updatedFile.modifiedTime : null;
@@ -193,9 +310,11 @@ export const GoogleDriveSync = {
                     
                     console.log('GoogleDriveSync: Successfully updated existing sync file.');
                     console.log('GoogleDriveSync: Push completed successfully.');
-                    return { success: true };
+                    report.totalTime = Math.round(performance.now() - startTime);
+                    return { success: true, report };
                 } else {
                     // 新規ファイルを作成（マルチパートリクエストによるメタデータとファイルの同時POST）
+                    const uploadStart = performance.now();
                     const metadata = {
                         name: this.FILE_NAME,
                         parents: ['appDataFolder']
@@ -228,6 +347,8 @@ export const GoogleDriveSync = {
                         throw new Error(`Failed to create drive file: ${response.status} ${response.statusText} - ${errText}`);
                     }
                     
+                    report.uploadTime = Math.round(performance.now() - uploadStart);
+                    
                     // 新規作成成功後に最新の modifiedTime を取得して保存
                     const updatedFile = await this.findSyncFile(interactive);
                     const newModifiedTime = updatedFile ? updatedFile.modifiedTime : null;
@@ -239,7 +360,8 @@ export const GoogleDriveSync = {
                     
                     console.log('GoogleDriveSync: Successfully created new sync file.');
                     console.log('GoogleDriveSync: Push completed successfully.');
-                    return { success: true };
+                    report.totalTime = Math.round(performance.now() - startTime);
+                    return { success: true, report };
                 }
             } catch (err) {
                 console.error(`GoogleDriveSync: Error occurred during push attempt ${attempt}:`, err);
@@ -257,16 +379,23 @@ export const GoogleDriveSync = {
      */
     async pull(storage, interactive = true) {
         console.log('GoogleDriveSync: Pulling from Google Drive...');
+        const startTime = performance.now();
+        const report = {};
         
         // 1. 同期ファイルがあるかを検索します
+        const t0 = performance.now();
         const syncFile = await this.findSyncFile(interactive);
+        report.findFileTime = Math.round(performance.now() - t0);
+        
         if (!syncFile) {
             console.log('GoogleDriveSync: No sync file found on drive. Skipping pull.');
             await chrome.storage.local.remove('wc_last_modified_time');
-            return { success: true, updated: false };
+            report.totalTime = Math.round(performance.now() - startTime);
+            return { success: true, updated: false, report };
         }
         
         // 2. 暗号化されたBase64文字列をダウンロード
+        const t1 = performance.now();
         const downloadUrl = `https://www.googleapis.com/drive/v3/files/${syncFile.id}?alt=media`;
         const response = await this.fetchWithAuth(downloadUrl, { method: 'GET' }, interactive);
         if (!response.ok) {
@@ -275,19 +404,28 @@ export const GoogleDriveSync = {
         }
         
         const encryptedData = await response.text();
+        report.downloadTime = Math.round(performance.now() - t1);
+        
         if (!encryptedData) {
             console.warn('GoogleDriveSync: Downloaded file is empty.');
-            return { success: true, updated: false };
+            report.totalTime = Math.round(performance.now() - startTime);
+            return { success: true, updated: false, report };
         }
         
         // 3. 暗号をAES-GCMで復号し、圧縮データのBase64文字列を復元
+        const t2 = performance.now();
         const compressedBase64 = await decrypt(encryptedData);
+        report.decryptTime = Math.round(performance.now() - t2);
         
         // 4. GZIP圧縮を展開して元のJSONテキストを完全復元
+        const t3 = performance.now();
         const rawJson = await this.decompressData(compressedBase64);
+        report.decompressTime = Math.round(performance.now() - t3);
         
         // 5. ローカルデータベースへマージして取り込みます
+        const t4 = performance.now();
         await storage.importFromJson(rawJson);
+        report.mergeTime = Math.round(performance.now() - t4);
         
         // 6. 成功したため最新の modifiedTime を保存
         if (syncFile.modifiedTime) {
@@ -295,8 +433,9 @@ export const GoogleDriveSync = {
             console.log('GoogleDriveSync: Saved last modifiedTime:', syncFile.modifiedTime);
         }
         
-        console.log('GoogleDriveSync: Pull and merge completed successfully.');
-        return { success: true, updated: true };
+        report.totalTime = Math.round(performance.now() - startTime);
+        console.log('GoogleDriveSync: Pull and merge completed successfully.', report);
+        return { success: true, updated: true, report };
     },
 
     /**
