@@ -44,7 +44,8 @@ async function init() {
         rebuildFromBookmarks: Actions.rebuildFromBookmarks,
         toggleEncryptOption: Actions.toggleEncryptOption,
         syncNow: Actions.syncNow,
-        syncNowFromHeader: Actions.syncNowFromHeader
+        syncNowFromHeader: Actions.syncNowFromHeader,
+        rebuildImageIndex: Actions.rebuildImageIndex
     });
 
     // 3. 初期データのロード

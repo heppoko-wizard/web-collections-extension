@@ -472,6 +472,36 @@ export async function rebuildFromBookmarks() {
     }
 }
 
+export async function rebuildImageIndex() {
+    if (!confirm('Googleドライブ上のすべての画像ファイルをスキャンし、画像インデックスを再作成します。この処理には少し時間がかかる場合があります。実行しますか？')) {
+        return;
+    }
+
+    const btn = elements.btnRebuildImageIndex || document.getElementById('btn-rebuild-image-index');
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '再構築中...';
+    }
+
+    try {
+        const response = await sendMessage({ action: 'rebuildImageIndex' });
+        if (response.success) {
+            alert('画像インデックスの再構築が完了しました。新たに ' + response.rebuiltCount + ' 件の画像が登録されました。');
+        } else {
+            alert('再構築に失敗しました: ' + response.error);
+        }
+    } catch (error) {
+        console.error('Image index rebuild failed:', error);
+        alert('エラーが発生しました: ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText || 'ドライブから画像インデックスを再構築';
+        }
+    }
+}
+
 export async function autoSyncPull() {
     try {
         const pullResponse = await sendMessage({ action: 'autoSyncPull' });

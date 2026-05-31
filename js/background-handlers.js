@@ -211,6 +211,18 @@ export async function handleMessage(message, setupContextMenus) {
                 return { success: false, error: error.message };
             }
         
+        case 'rebuildImageIndex': {
+            try {
+                const rebuildResult = await GoogleDriveSync.rebuildImageIndex(true);
+                response.success = rebuildResult.success;
+                response.rebuiltCount = rebuildResult.rebuiltCount;
+            } catch (err) {
+                response.success = false;
+                response.error = err.message;
+            }
+            break;
+        }
+
         case 'getLocalCache': {
             response.data = await getLocalCache(message.hash);
             break;
@@ -260,16 +272,6 @@ export async function handleMessage(message, setupContextMenus) {
                 response.data = await downloadPromise;
             } finally {
                 driveDownloadPromises.delete(hash);
-            }
-            break;
-        }
-
-        case 'rebuildImageIndex': {
-            try {
-                const result = await GoogleDriveSync.rebuildImageIndex(true);
-                response.data = result;
-            } catch (err) {
-                return { success: false, error: err.message };
             }
             break;
         }

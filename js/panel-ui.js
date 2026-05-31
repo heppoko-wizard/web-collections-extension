@@ -43,6 +43,7 @@ export function initElements() {
     elements.btnImportFile = document.getElementById('btn-import-file');
     elements.btnExportAll = document.getElementById('btn-export-all');
     elements.btnRebuildFromBookmarks = document.getElementById('btn-rebuild-from-bookmarks');
+    elements.btnRebuildImageIndex = document.getElementById('btn-rebuild-image-index');
     elements.btnSyncNow = document.getElementById('btn-sync-now');
 
     // Settings Inputs

@@ -99,6 +99,14 @@ export function initEvents(handlers) {
         });
     }
 
+    if (elements.btnRebuildImageIndex) {
+        elements.btnRebuildImageIndex.addEventListener('click', () => {
+            if (handlers.rebuildImageIndex) {
+                handlers.rebuildImageIndex();
+            }
+        });
+    }
+
     if (elements.btnSyncNow) {
         elements.btnSyncNow.addEventListener('click', () => {
             if (handlers.syncNow) {
