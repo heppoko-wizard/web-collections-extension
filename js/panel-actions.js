@@ -453,8 +453,16 @@ export async function rebuildFromBookmarks() {
     }
 
     try {
-        // 1. ローカルストレージをクリア
+        // 1. ローカルのコレクションデータと同期メタデータをクリア
         await chrome.storage.local.set({ wc_collections: [] });
+        await chrome.storage.local.remove('wc_last_modified_time');
+
+        const settingsResponse = await sendMessage({ action: 'getSettings' });
+        if (settingsResponse.success && settingsResponse.data) {
+            const settings = settingsResponse.data;
+            settings.lastSyncTime = null;
+            await sendMessage({ action: 'saveSettings', settings });
+        }
 
         // 2. GoogleドライブからPullを実行
         const pullResponse = await sendMessage({ action: 'autoSyncPull' });
