@@ -8,6 +8,34 @@ import { decrypt } from './encryption-helper.js';
 // ドライブからの画像ダウンロード重複を防ぐためのマップ
 const driveDownloadPromises = new Map();
 
+// 画像インデックスのインメモリキャッシュ
+let cachedImageIndex = null;
+let cachedImageIndexTime = 0;
+const INDEX_CACHE_TTL = 30000;
+
+/**
+ * キャッシュを活用してGoogle Driveから最新の画像インデックスを取得します
+ */
+async function getImageIndexCached() {
+    const now = Date.now();
+    if (cachedImageIndex && now - cachedImageIndexTime < INDEX_CACHE_TTL) {
+        return cachedImageIndex;
+    }
+
+    try {
+        const pullResult = await GoogleDriveSync.pullImageIndex();
+        if (pullResult && pullResult.data) {
+            cachedImageIndex = pullResult.data;
+            cachedImageIndexTime = now;
+            return cachedImageIndex;
+        }
+    } catch (err) {
+        console.error('Background: Failed to fetch image index from drive:', err);
+    }
+    
+    return cachedImageIndex || { version: 1, images: {} };
+}
+
 /**
  * 同期排他ロックの状態をチェックします
  */
@@ -198,12 +226,28 @@ export async function handleMessage(message, setupContextMenus) {
             const downloadPromise = (async () => {
                 let cachedData = null;
                 try {
-                    const file = await GoogleDriveSync.findImageCacheFileByHash(hash);
-                    if (file) {
-                        console.log(`Background: Ondemand downloading image cache from drive: ${hash}`);
-                        const encryptedData = await GoogleDriveSync.downloadImageCache(file.id);
+                    const cloudIndex = await getImageIndexCached();
+                    let fileId = null;
+                    
+                    if (cloudIndex && cloudIndex.images && cloudIndex.images[hash]) {
+                        fileId = cloudIndex.images[hash].fileId;
+                    }
+                    
+                    if (!fileId) {
+                        console.log(`Background: Hash ${hash} not found in index, falling back to search API...`);
+                        const file = await GoogleDriveSync.findImageCacheFileByHash(hash);
+                        if (file) {
+                            fileId = file.id;
+                        }
+                    }
+                    
+                    if (fileId) {
+                        console.log(`Background: Ondemand downloading image cache from drive using fileId: ${fileId}`);
+                        const encryptedData = await GoogleDriveSync.downloadImageCache(fileId);
                         cachedData = await decrypt(encryptedData);
                         await saveLocalCache(hash, cachedData);
+                    } else {
+                        console.warn(`Background: Image cache file not found in drive for hash: ${hash}`);
                     }
                 } catch (driveErr) {
                     console.error('Background: Ondemand image download from drive failed:', driveErr);
