@@ -264,6 +264,16 @@ export async function handleMessage(message, setupContextMenus) {
             break;
         }
 
+        case 'rebuildImageIndex': {
+            try {
+                const result = await GoogleDriveSync.rebuildImageIndex(true);
+                response.data = result;
+            } catch (err) {
+                return { success: false, error: err.message };
+            }
+            break;
+        }
+
         case 'getImageCache': {
             const hash = await getImageHash(message.url);
             let cachedData = await getLocalCache(hash);
