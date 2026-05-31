@@ -591,10 +591,23 @@ export const GoogleDriveSync = {
 
     /**
      * 画像インデックスファイルをダウンロードして復号します
+     * @param {boolean} interactive - 対話型認証を行うか
+     * @param {boolean} isRebuilding - 再構築中であるかを示すフラグ
      */
-    async pullImageIndex(interactive = true) {
+    async pullImageIndex(interactive = true, isRebuilding = false) {
         const indexFile = await this.findImageIndexFile(interactive);
         if (!indexFile) {
+            if (!isRebuilding) {
+                console.warn('GoogleDriveSync: Image index file not found. Triggering automatic rebuild...');
+                try {
+                    const rebuildResult = await this.rebuildImageIndex(interactive);
+                    if (rebuildResult.success) {
+                        return await this.pullImageIndex(interactive, true);
+                    }
+                } catch (rebuildErr) {
+                    console.error('GoogleDriveSync: Automatic image index rebuild failed:', rebuildErr);
+                }
+            }
             return { data: { version: 1, images: {} }, modifiedTime: null };
         }
         
@@ -613,6 +626,59 @@ export const GoogleDriveSync = {
         const compressedBase64 = await decrypt(encryptedData);
         const rawJson = await this.decompressData(compressedBase64);
         return { data: JSON.parse(rawJson), modifiedTime: indexFile.modifiedTime };
+    },
+
+    /**
+     * ドライブ上のすべての画像ファイルをスキャンし、画像インデックスファイルを再構築します
+     */
+    async rebuildImageIndex(interactive = true) {
+        console.log('GoogleDriveSync: Rebuilding image index by scanning drive files...');
+        const driveFiles = await this.findImageCacheFiles();
+        
+        let cloudIndex = { version: 1, images: {} };
+        let expectedModifiedTime = null;
+        try {
+            const pullResult = await this.pullImageIndex(interactive, true);
+            cloudIndex = pullResult.data;
+            expectedModifiedTime = pullResult.modifiedTime;
+        } catch (pullErr) {
+            console.warn('GoogleDriveSync: Failed to pull existing image index during rebuild, creating fresh one:', pullErr);
+        }
+
+        if (!cloudIndex.images) {
+            cloudIndex.images = {};
+        }
+
+        const newImages = {};
+        let rebuiltCount = 0;
+
+        for (const file of driveFiles) {
+            if (file.name && file.name.startsWith('cache_')) {
+                const hash = file.name.substring('cache_'.length);
+                
+                if (cloudIndex.images[hash]) {
+                    newImages[hash] = {
+                        ...cloudIndex.images[hash],
+                        fileId: file.id
+                    };
+                } else {
+                    newImages[hash] = {
+                        fileId: file.id,
+                        url: '',
+                        syncedAt: Date.now()
+                    };
+                    rebuiltCount++;
+                }
+            }
+        }
+
+        cloudIndex.images = newImages;
+        console.log(`GoogleDriveSync: Rebuilt ${rebuiltCount} unregistered images into index.`);
+        
+        await this.pushImageIndex(cloudIndex, expectedModifiedTime, true, interactive);
+        console.log('GoogleDriveSync: Image index successfully rebuilt and saved to drive.');
+        
+        return { success: true, rebuiltCount };
     },
 
     /**
