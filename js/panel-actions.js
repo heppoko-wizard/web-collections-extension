@@ -12,13 +12,17 @@ import { initDragDrop } from './panel-dragdrop.js';
 
 // Message API Helper
 async function sendMessage(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(message, (response) => {
             if (chrome.runtime.lastError) {
                 console.error('sendMessage error:', chrome.runtime.lastError);
-                resolve({ success: false, error: chrome.runtime.lastError.message });
+                reject(new Error(chrome.runtime.lastError.message));
             } else {
-                resolve(response);
+                if (response && response.success === false) {
+                    reject(new Error(response.error || 'Unknown runtime error'));
+                } else {
+                    resolve(response || { success: true });
+                }
             }
         });
     });
@@ -42,23 +46,26 @@ export async function saveNewCollection() {
     const name = elements.createCollectionInput.value.trim();
     if (!name) return;
 
-    const response = await sendMessage({ action: 'createCollection', name });
-    if (response.success) {
+    try {
+        const response = await sendMessage({ action: 'createCollection', name });
         state.collections.unshift(response.data);
         Render.renderCollectionsList(elements, openCollection);
         hideModal(elements.modalCreateCollection);
         openCollection(response.data.id);
-
+    } catch (err) {
+        console.error('Failed to create new collection:', err);
+        alert('コレクションの作成に失敗しました：' + err.message);
     }
 }
 
 export async function openCollection(id) {
     state.currentCollectionId = id;
     showView('detail');
-    const response = await sendMessage({ action: 'getItemsByCollection', collectionId: id });
-    if (response.success) {
+    try {
+        const response = await sendMessage({ action: 'getItemsByCollection', collectionId: id });
         state.currentItems = response.data;
-    } else {
+    } catch (err) {
+        console.error('Failed to get items:', err);
         state.currentItems = [];
     }
     Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
@@ -67,32 +74,36 @@ export async function openCollection(id) {
 export async function deleteCurrentCollection() {
     if (!confirm('このコレクションを削除しますか？')) return;
 
-    const response = await sendMessage({
-        action: 'deleteCollection',
-        id: state.currentCollectionId
-    });
-
-    if (response.success) {
+    try {
+        await sendMessage({
+            action: 'deleteCollection',
+            id: state.currentCollectionId
+        });
         state.collections = state.collections.filter(c => c.id !== state.currentCollectionId);
         state.currentCollectionId = null;
         showView('list');
         Render.renderCollectionsList(elements, openCollection);
         hideModal(elements.modalCollectionMenu);
-
+    } catch (err) {
+        console.error('Failed to delete collection:', err);
+        alert('コレクションの削除に失敗しました：' + err.message);
     }
 }
 
 export async function updateCollectionName() {
     const newName = elements.collectionTitle.textContent.trim();
     if (newName) {
-        await sendMessage({
-            action: 'updateCollection',
-            id: state.currentCollectionId,
-            updates: { name: newName }
-        });
-        const collection = state.collections.find(c => c.id === state.currentCollectionId);
-        if (collection) collection.name = newName;
-
+        try {
+            await sendMessage({
+                action: 'updateCollection',
+                id: state.currentCollectionId,
+                updates: { name: newName }
+            });
+            const collection = state.collections.find(c => c.id === state.currentCollectionId);
+            if (collection) collection.name = newName;
+        } catch (err) {
+            console.error('Failed to update collection name:', err);
+        }
     }
 }
 
@@ -105,17 +116,19 @@ export async function addCurrentPage() {
         faviconUrl: tab.favIconUrl || ''
     };
 
-    const response = await sendMessage({
-        action: 'addItem',
-        collectionId: state.currentCollectionId,
-        item
-    });
-
-    if (response.success) {
+    try {
+        const response = await sendMessage({
+            action: 'addItem',
+            collectionId: state.currentCollectionId,
+            item
+        });
         state.currentItems.unshift(response.data);
         Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
+    } catch (err) {
+        console.error('Failed to add current page:', err);
+        alert('ページの追加に失敗しました：' + err.message);
     }
-    }
+}
 
     export async function addAllTabs() {
     const tabs = await chrome.tabs.query({ currentWindow: true });
@@ -136,15 +149,16 @@ export async function addCurrentPage() {
             faviconUrl: tab.favIconUrl || ''
         };
 
-        const response = await sendMessage({
-            action: 'addItem',
-            collectionId: state.currentCollectionId,
-            item: itemData
-        });
-
-        if (response.success) {
+        try {
+            const response = await sendMessage({
+                action: 'addItem',
+                collectionId: state.currentCollectionId,
+                item: itemData
+            });
             state.currentItems.unshift(response.data);
             addedCount++;
+        } catch (err) {
+            console.error('Failed to add tab:', tab.url, err);
         }
     }
 
@@ -164,49 +178,52 @@ export async function saveNote() {
     const content = elements.noteInput.value.trim();
     if (!content) return;
 
-    const response = await sendMessage({
-        action: 'addItem',
-        collectionId: state.currentCollectionId,
-        item: { type: 'note', content }
-    });
-
-    if (response.success) {
+    try {
+        const response = await sendMessage({
+            action: 'addItem',
+            collectionId: state.currentCollectionId,
+            item: { type: 'note', content }
+        });
         state.currentItems.unshift(response.data);
         Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
         hideModal(elements.modalNote);
-
+    } catch (err) {
+        console.error('Failed to save note:', err);
+        alert('メモの保存に失敗しました：' + err.message);
     }
 }
 
 export async function deleteItem(itemId) {
-    const response = await sendMessage({
-        action: 'removeItem',
-        collectionId: state.currentCollectionId,
-        itemId
-    });
-
-    if (response.success) {
+    try {
+        await sendMessage({
+            action: 'removeItem',
+            collectionId: state.currentCollectionId,
+            itemId
+        });
         state.currentItems = state.currentItems.filter(i => i.id !== itemId);
         Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
-
+    } catch (err) {
+        console.error('Failed to delete item:', err);
+        alert('アイテムの削除に失敗しました：' + err.message);
     }
 }
 
 export async function updateItem(itemId, updates) {
-    const response = await sendMessage({
-        action: 'updateItem',
-        collectionId: state.currentCollectionId,
-        itemId,
-        updates
-    });
-
-    if (response.success) {
+    try {
+        const response = await sendMessage({
+            action: 'updateItem',
+            collectionId: state.currentCollectionId,
+            itemId,
+            updates
+        });
         const index = state.currentItems.findIndex(i => i.id === itemId);
         if (index !== -1) {
             state.currentItems[index] = response.data;
             Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
         }
-
+    } catch (err) {
+        console.error('Failed to update item:', err);
+        alert('アイテムの更新に失敗しました：' + err.message);
     }
 }
 
@@ -254,15 +271,24 @@ export async function openAllLinks() {
 }
 
 export async function saveNewOrder(itemIds) {
-    await sendMessage({
-        action: 'reorderItems',
-        collectionId: state.currentCollectionId,
-        itemIds
-    });
-
+    const originalItems = [...state.currentItems];
+    
+    // UIを先行して更新
     const itemMap = new Map(state.currentItems.map(i => [i.id, i]));
     state.currentItems = itemIds.map(id => itemMap.get(id)).filter(Boolean);
 
+    try {
+        await sendMessage({
+            action: 'reorderItems',
+            collectionId: state.currentCollectionId,
+            itemIds
+        });
+    } catch (err) {
+        console.error('Failed to save new order:', err);
+        alert('順序の保存に失敗しました。元の順序に戻します。');
+        state.currentItems = originalItems;
+        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
+    }
 }
 
 export async function loadSettings() {
@@ -349,9 +375,7 @@ export async function updateSettingsUI() {
         }
     }
 
-    if (elements.settingEncryptEnabled) {
-        elements.settingEncryptEnabled.checked = settings.encryptEnabled || false;
-    }
+
 
     applyDisplaySettings();
 }
@@ -562,34 +586,7 @@ export async function copyCollectionJson() {
     hideModal(elements.modalCollectionMenu);
 }
 
-export async function toggleEncryptOption(enabled) {
-    const confirmMessage = enabled
-        ? 'ブックマークの暗号化を有効にします。過去に登録済みのすべてのコレクションデータを暗号化して再構築します。よろしいですか？'
-        : 'ブックマークの暗号化を解除します。過去に登録済みのすべてのコレクションデータを平文形式に戻して再構築します。よろしいですか？';
 
-    if (!confirm(confirmMessage)) {
-        await updateSettingsUI();
-        return;
-    }
-
-    try {
-        const response = await sendMessage({
-            action: 'migrateEncryption',
-            encryptEnabled: enabled
-        });
-
-        if (response.success) {
-            await rebuildFromBookmarks();
-        } else {
-            alert('切り替え処理に失敗しました: ' + response.error);
-            await updateSettingsUI();
-        }
-    } catch (error) {
-        console.error('Failed to toggle encryption option:', error);
-        alert('エラーが発生しました: ' + error.message);
-        await updateSettingsUI();
-    }
-}
 
 export async function syncNow() {
     const btn = elements.btnSyncNow || document.getElementById('btn-sync-now');

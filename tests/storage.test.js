@@ -260,4 +260,51 @@ test('CollectionStorage - CRUD operations', async (t) => {
         assert.ok(activeColRecord.items.find(i => i.id === 'item-active'));
         assert.ok(activeColRecord.items.find(i => i.id === 'item-del-new'));
     });
+
+    await t.test('generateId generates valid UUID', async () => {
+        const id = CollectionStorage.generateId();
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        assert.ok(uuidPattern.test(id));
+    });
+
+    await t.test('sortOrder normalization on merge conflict', async () => {
+        mockStorage.clear();
+        
+        const col = await CollectionStorage.createCollection('SortOrder Test');
+        
+        const mergeData = {
+            id: col.id,
+            name: 'SortOrder Test',
+            updatedAt: Date.now(),
+            items: [
+                {
+                    id: 'item-old',
+                    type: 'link',
+                    url: 'https://example.com/old',
+                    title: 'Old Item',
+                    sortOrder: 0,
+                    updatedAt: 1000
+                },
+                {
+                    id: 'item-new',
+                    type: 'link',
+                    url: 'https://example.com/new',
+                    title: 'New Item',
+                    sortOrder: 0,
+                    updatedAt: 2000
+                }
+            ]
+        };
+
+        await CollectionStorage.importFromJson(JSON.stringify(mergeData));
+
+        const items = await CollectionStorage.getItemsByCollection(col.id);
+        assert.strictEqual(items.length, 2);
+
+        assert.strictEqual(items[0].sortOrder, 0);
+        assert.strictEqual(items[1].sortOrder, 1);
+
+        assert.strictEqual(items[0].id, 'item-new');
+        assert.strictEqual(items[1].id, 'item-old');
+    });
 });

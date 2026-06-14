@@ -152,13 +152,7 @@ export function initEvents(handlers) {
         });
     }
 
-    if (elements.settingEncryptEnabled) {
-        elements.settingEncryptEnabled.addEventListener('change', async (e) => {
-            if (handlers.toggleEncryptOption) {
-                await handlers.toggleEncryptOption(e.target.checked);
-            }
-        });
-    }
+
 
     // Close modals on backdrop click
     [elements.modalNote, elements.modalCollectionMenu, elements.modalCreateCollection].forEach(modal => {
@@ -189,6 +183,10 @@ export function initEvents(handlers) {
         } else if (message.action === 'downloadProgress') {
             if (handlers.onDownloadProgress) {
                 handlers.onDownloadProgress(message.detail);
+            }
+        } else if (message.action === 'imageDownloaded') {
+            if (handlers.onImageDownloaded) {
+                handlers.onImageDownloaded(message.hash, message.dataUrl);
             }
         }
     });

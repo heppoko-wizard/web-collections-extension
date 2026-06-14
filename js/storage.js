@@ -12,6 +12,22 @@ export const CollectionStorage = {
     },
 
     /**
+     * ヘルパー：アイテムのsortOrderを正規化する
+     */
+    _normalizeSortOrder(items) {
+        if (!items || items.length === 0) return;
+        items.sort((a, b) => {
+            const orderA = a.sortOrder ?? 0;
+            const orderB = b.sortOrder ?? 0;
+            if (orderA !== orderB) return orderA - orderB;
+            return (b.updatedAt || 0) - (a.updatedAt || 0);
+        });
+        items.forEach((item, idx) => {
+            item.sortOrder = idx;
+        });
+    },
+
+    /**
      * ヘルパー：データを取得する
      */
     async _getCollectionsRaw() {
@@ -209,18 +225,14 @@ export const CollectionStorage = {
             collectionId: collectionId,
             ...item,
             savedAt: Date.now(),
-            sortOrder: 0,
+            sortOrder: -1,
             updatedAt: Date.now(),
             isDeleted: false
         };
 
-        // 既存アイテムのsortOrderを+1して新アイテムを先頭に挿入
         const items = col.items || [];
-        items.forEach(record => {
-            record.sortOrder = (record.sortOrder ?? 0) + 1;
-        });
-
         items.push(newItem);
+        this._normalizeSortOrder(items);
         col.items = items;
         col.updatedAt = Date.now();
 
@@ -366,9 +378,7 @@ export const CollectionStorage = {
      * @returns {string}
      */
     generateId() {
-        return 'xxxx-xxxx-xxxx'.replace(/x/g, () =>
-            Math.floor(Math.random() * 16).toString(16)
-        );
+        return crypto.randomUUID();
     },
 
     /**
@@ -459,6 +469,7 @@ export const CollectionStorage = {
                         }
                     }
                     existingCol.items = Array.from(localItemMap.values());
+                    this._normalizeSortOrder(existingCol.items);
                 }
                 // itemsが未定義の場合は既存のアイテムを保持する
             } else {
@@ -480,6 +491,7 @@ export const CollectionStorage = {
                     isDeleted: col.isDeleted || false,
                     items: formattedItems
                 };
+                this._normalizeSortOrder(importedCol.items);
                 currentCollections.push(importedCol);
             }
         }
@@ -563,6 +575,7 @@ export const CollectionStorage = {
                     }
                 }
                 existingCol.items = Array.from(localItemMap.values());
+                this._normalizeSortOrder(existingCol.items);
             }
         } else {
             // 新規コレクションとして追加
@@ -581,6 +594,7 @@ export const CollectionStorage = {
                 isDeleted: data.isDeleted || false,
                 items: newItems
             };
+            this._normalizeSortOrder(importedCol.items);
             collections.push(importedCol);
         }
 

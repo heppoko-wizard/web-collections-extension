@@ -189,20 +189,27 @@ export async function getLocalCachesBulk(hashes) {
     if (!hashes || hashes.length === 0) return {};
     await migrateFromStorageLocal();
     
-    const result = {};
-    const promises = hashes.map(async (hash) => {
-        try {
-            const cachedData = await getLocalCache(hash);
-            if (cachedData) {
-                result[hash] = cachedData;
-            }
-        } catch (err) {
-            console.error('ImageCacheHelper: Failed to get bulk cache for hash:', hash, err);
+    const db = await getDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const result = {};
+        let pending = hashes.length;
+        
+        for (const hash of hashes) {
+            const request = store.get(hash);
+            request.onsuccess = () => {
+                if (request.result) {
+                    result[hash] = request.result;
+                }
+                if (--pending === 0) resolve(result);
+            };
+            request.onerror = (e) => {
+                console.error('ImageCacheHelper: Failed to get bulk cache for hash:', hash, e.target.error);
+                if (--pending === 0) resolve(result);
+            };
         }
     });
-    
-    await Promise.all(promises);
-    return result;
 }
 
 /**

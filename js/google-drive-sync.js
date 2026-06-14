@@ -17,6 +17,23 @@ export const GoogleDriveSync = {
     IMAGE_INDEX_FILE_NAME: 'web-collections-images-index.enc',
 
     /**
+     * アップロード失敗した画像のハッシュとURLを未処理リストへ保存します
+     */
+    async addPendingImageUpload(hash, url) {
+        try {
+            const result = await chrome.storage.local.get('wc_pending_image_uploads');
+            const pending = result.wc_pending_image_uploads || [];
+            if (!pending.some(p => p.hash === hash)) {
+                pending.push({ hash, url });
+                await chrome.storage.local.set({ wc_pending_image_uploads: pending });
+                console.log(`GoogleDriveSync: Registered pending image upload: ${hash}`);
+            }
+        } catch (err) {
+            console.error('GoogleDriveSync: Failed to save pending image upload:', err);
+        }
+    },
+
+    /**
      * Google OAuth アクセストークンを取得します
      */
     async getAuthToken(interactive = true) {
@@ -190,6 +207,25 @@ export const GoogleDriveSync = {
      */
     async push(storage, forceAll = false, interactive = true) {
         console.log('GoogleDriveSync: Pushing to Google Drive...');
+
+        // 未処理画像のアップロードを再試行
+        try {
+            const pending = await chrome.storage.local.get('wc_pending_image_uploads');
+            const pendingUploads = pending.wc_pending_image_uploads || [];
+            if (pendingUploads.length > 0) {
+                console.log(`GoogleDriveSync: Retrying ${pendingUploads.length} pending image uploads...`);
+                await chrome.storage.local.remove('wc_pending_image_uploads');
+                for (const task of pendingUploads) {
+                    const localData = await getLocalCache(task.hash);
+                    if (localData) {
+                        await this.uploadImageOnRegistration(task.hash, localData, task.url);
+                    }
+                }
+            }
+        } catch (pendingErr) {
+            console.warn('GoogleDriveSync: Failed to process pending image uploads:', pendingErr);
+        }
+
         const startTime = performance.now();
         const report = {};
         
@@ -573,6 +609,7 @@ export const GoogleDriveSync = {
             }
         } catch (err) {
             console.error(`GoogleDriveSync: Failed to upload image on registration for ${hash}:`, err);
+            await this.addPendingImageUpload(hash, url);
         }
     },
 

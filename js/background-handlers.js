@@ -41,7 +41,22 @@ async function getImageIndexCached() {
  */
 async function isSyncLocked() {
     const result = await chrome.storage.local.get('wc_sync_lock');
-    return !!result.wc_sync_lock;
+    const lock = result.wc_sync_lock;
+    if (!lock) return false;
+    
+    if (lock === true) {
+        await chrome.storage.local.remove('wc_sync_lock');
+        return false;
+    }
+    
+    // 5分以上経過したロックは無効とみなす
+    const LOCK_TIMEOUT = 5 * 60 * 1000;
+    if (Date.now() - lock.timestamp > LOCK_TIMEOUT) {
+        await chrome.storage.local.remove('wc_sync_lock');
+        console.warn('Background: Stale sync lock released.');
+        return false;
+    }
+    return true;
 }
 
 /**
@@ -72,6 +87,15 @@ export async function executeAutoSyncPush() {
         console.log('Background: Auto-sync success');
     } catch (error) {
         console.error('Background: Auto-sync failed:', error);
+        if (error.message && (
+            error.message.includes('not signed in') || 
+            error.message.includes('OAuth2') ||
+            error.message.includes('auth') ||
+            error.message.includes('authentication')
+        )) {
+            chrome.action.setBadgeText({ text: '!' });
+            chrome.action.setBadgeBackgroundColor({ color: '#FF5252' });
+        }
     }
 }
 
@@ -210,6 +234,7 @@ export async function handleMessage(message, setupContextMenus) {
             } catch (error) {
                 return { success: false, error: error.message };
             }
+            break;
         
         case 'rebuildImageIndex': {
             try {
@@ -304,16 +329,46 @@ export async function handleMessage(message, setupContextMenus) {
             let cachedData = await getLocalCache(hash);
             
             if (!cachedData) {
-                try {
-                    const file = await GoogleDriveSync.findImageCacheFileByHash(hash);
-                    if (file) {
-                        console.log(`Background: Ondemand downloading image cache: ${hash}`);
-                        const encryptedData = await GoogleDriveSync.downloadImageCache(file.id);
-                        cachedData = await decrypt(encryptedData);
-                        await saveLocalCache(hash, cachedData);
+                if (driveDownloadPromises.has(hash)) {
+                    response.data = await driveDownloadPromises.get(hash);
+                    break;
+                }
+
+                const downloadPromise = (async () => {
+                    let data = null;
+                    try {
+                        const cloudIndex = await getImageIndexCached();
+                        let fileId = null;
+                        
+                        if (cloudIndex && cloudIndex.images && cloudIndex.images[hash]) {
+                            fileId = cloudIndex.images[hash].fileId;
+                        }
+                        
+                        if (!fileId) {
+                            console.log(`Background: Hash ${hash} not found in index, falling back to search API...`);
+                            const file = await GoogleDriveSync.findImageCacheFileByHash(hash);
+                            if (file) {
+                                fileId = file.id;
+                            }
+                        }
+                        
+                        if (fileId) {
+                            console.log(`Background: Ondemand downloading image cache: ${hash}`);
+                            const encryptedData = await GoogleDriveSync.downloadImageCache(fileId);
+                            data = await decrypt(encryptedData);
+                            await saveLocalCache(hash, data);
+                        }
+                    } catch (driveErr) {
+                        console.error('Background: Ondemand image download failed:', driveErr);
                     }
-                } catch (driveErr) {
-                    console.error('Background: Ondemand image download failed:', driveErr);
+                    return data;
+                })();
+
+                driveDownloadPromises.set(hash, downloadPromise);
+                try {
+                    cachedData = await downloadPromise;
+                } finally {
+                    driveDownloadPromises.delete(hash);
                 }
             }
             
@@ -376,6 +431,11 @@ export async function handleMessage(message, setupContextMenus) {
                                             const encryptedData = await GoogleDriveSync.downloadImageCache(item.fileId);
                                             const cachedData = await decrypt(encryptedData);
                                             await saveLocalCache(item.hash, cachedData);
+                                            chrome.runtime.sendMessage({
+                                                action: 'imageDownloaded',
+                                                hash: item.hash,
+                                                dataUrl: cachedData
+                                            }).catch(() => {});
                                         } catch (err) {
                                             console.error(`Background: Non-blocking bulk ondemand download failed for ${item.hash}:`, err);
                                         }
@@ -421,9 +481,7 @@ export async function handleMessage(message, setupContextMenus) {
                 return { success: false, error: error.message };
             }
 
-        case 'migrateEncryption': {
-            return { success: true };
-        }
+
 
         default:
             return { success: false, error: 'Unknown action: ' + message.action };

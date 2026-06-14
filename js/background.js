@@ -15,6 +15,20 @@ chrome.runtime.onInstalled.addListener(async () => {
     console.log('Web Collections extension installed');
 });
 
+// ブラウザ起動時のアラームとメニュー登録
+chrome.runtime.onStartup.addListener(() => {
+    setupAlarms();
+    setupContextMenus();
+});
+
+// Service Worker再起動時の防御的アラーム再登録
+(async () => {
+    const existingAlarm = await chrome.alarms.get('auto-sync-polling');
+    if (!existingAlarm) {
+        setupAlarms();
+    }
+})();
+
 
 
 
@@ -30,7 +44,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'auto-sync-polling') {
         // プッシュを実行し、その完了後にプルを呼び出して双方向同期を実現します
         executeAutoSyncPush()
-            .then(() => handleMessage({ action: 'autoSyncPull', interactive: false }))
+            .then(() => handleMessage({ action: 'autoSyncPull', interactive: false }, setupContextMenus))
             .catch(err => console.warn('Background Alarm: Bidirectional sync failed', err));
     } else if (alarm.name === 'deferred-auto-sync-push') {
         executeAutoSyncPush()
@@ -243,7 +257,9 @@ async function handleAddItem(itemData, tab, collectionId = null) {
     }
 
     // Ensure background sync is triggered
-    handleMessage({ action: 'autoSyncPush' });
+    handleMessage({ action: 'autoSyncPush' }).catch(err =>
+        console.warn('Background: Post-add auto-sync push failed:', err)
+    );
 
     setTimeout(async () => {
         try {
@@ -349,15 +365,18 @@ async function fetchPageTitle(url, fallbackTitle) {
         console.warn('Failed to fetch page title via HTTP:', error);
     }
 
-    // 2. 取得したタイトルがドメイン名のみ、あるいは無効であると判定された場合のみ、URLから抽出を試みる
-    if (!title || isDomainOnlyTitle(title, url)) {
-        const urlTitle = extractTitleFromUrl(url);
-        if (urlTitle) {
-            return urlTitle;
-        }
+    // 2. 有効なタイトルが得られた場合はそれを返す
+    if (title && !isDomainOnlyTitle(title, url)) {
+        return title;
     }
 
-    // 3. すべての方法でタイトルが取得できない場合はフォールバック値を返す
+    // 3. URLから抽出（有効なタイトルが得られなかった場合のみ）
+    const urlTitle = extractTitleFromUrl(url);
+    if (urlTitle) {
+        return urlTitle;
+    }
+
+    // 4. すべての方法でタイトルが取得できない場合はフォールバック値を返す
     return title || fallbackTitle;
 }
 

@@ -6,6 +6,7 @@
 import { initElements } from './panel-ui.js';
 import { initEvents } from './panel-events.js';
 import * as Actions from './panel-actions.js';
+import { onImageDownloaded } from './panel-render.js';
 /**
  * アプリケーションの初期化
  */
@@ -42,12 +43,12 @@ async function init() {
         copyCollectionJson: Actions.copyCollectionJson,
         autoSyncPull: Actions.autoSyncPull,
         rebuildFromBookmarks: Actions.rebuildFromBookmarks,
-        toggleEncryptOption: Actions.toggleEncryptOption,
         syncNow: Actions.syncNow,
         syncNowFromHeader: Actions.syncNowFromHeader,
         rebuildImageIndex: Actions.rebuildImageIndex,
         downloadAllImageCaches: Actions.downloadAllImageCaches,
         onDownloadProgress: Actions.onDownloadProgress,
+        onImageDownloaded: onImageDownloaded,
         showContextMenu: Actions.showContextMenu,
         hideContextMenu: Actions.hideContextMenu
     });

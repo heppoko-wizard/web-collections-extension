@@ -291,6 +291,7 @@ let imageCacheObserver = null;
 async function loadAndFallbackImage(img, url) {
     if (!url) return;
     const hash = await getImageHash(url);
+    img.setAttribute('data-hash', hash);
     
     // すでに処理済みであればスキップする
     if (img.src && img.src.startsWith('data:') && !img.src.includes('sidepanel.html')) {
@@ -465,5 +466,15 @@ async function applyImageCaches(container) {
             return;
         }
         imageCacheObserver.observe(img);
+    });
+}
+
+/**
+ * 画像キャッシュのダウンロード完了時に呼び出され、該当するすべてのimg要素の画像を更新します
+ */
+export function onImageDownloaded(hash, dataUrl) {
+    const images = document.querySelectorAll(`img[data-hash="${hash}"]`);
+    images.forEach(img => {
+        img.src = dataUrl;
     });
 }

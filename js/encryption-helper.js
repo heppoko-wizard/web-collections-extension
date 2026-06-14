@@ -1,4 +1,7 @@
 // js/encryption-helper.js
+/**
+ * 注：本モジュールで提供される暗号化は、Google Drive上の暗号化データを第三者による高度な解読から保護する完全なセキュリティを提供するものではなく、簡易的なデータ難読化を目的としています。本番環境で本格的なセキュリティが必要な場合は、ユーザーによる固有パスフレーズ設定などの実装を検討してください。
+ */
 
 const ENCRYPTION_KEY_RAW = 'web-collections-extension-default-key-2026';
 let cachedKey = null;
