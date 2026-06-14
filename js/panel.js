@@ -45,7 +45,11 @@ async function init() {
         toggleEncryptOption: Actions.toggleEncryptOption,
         syncNow: Actions.syncNow,
         syncNowFromHeader: Actions.syncNowFromHeader,
-        rebuildImageIndex: Actions.rebuildImageIndex
+        rebuildImageIndex: Actions.rebuildImageIndex,
+        downloadAllImageCaches: Actions.downloadAllImageCaches,
+        onDownloadProgress: Actions.onDownloadProgress,
+        showContextMenu: Actions.showContextMenu,
+        hideContextMenu: Actions.hideContextMenu
     });
 
     // 3. 初期データのロード

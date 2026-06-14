@@ -45,6 +45,13 @@ export function initElements() {
     elements.btnRebuildFromBookmarks = document.getElementById('btn-rebuild-from-bookmarks');
     elements.btnRebuildImageIndex = document.getElementById('btn-rebuild-image-index');
     elements.btnSyncNow = document.getElementById('btn-sync-now');
+    elements.btnDownloadAllImages = document.getElementById('btn-download-all-images');
+    elements.downloadProgressContainer = document.getElementById('download-progress-container');
+    elements.downloadProgressStatus = document.getElementById('download-progress-status');
+    elements.downloadProgressPercent = document.getElementById('download-progress-percent');
+    elements.downloadProgressBar = document.getElementById('download-progress-bar');
+    elements.downloadProgressCounts = document.getElementById('download-progress-counts');
+    elements.downloadProgressErrors = document.getElementById('download-progress-errors');
 
     // Settings Inputs
     elements.settingTileWidth = document.getElementById('setting-tile-width');
@@ -67,6 +74,12 @@ export function initElements() {
     elements.btnExportCollection = document.getElementById('btn-export-collection');
     elements.btnCopyCollectionJson = document.getElementById('btn-copy-collection-json');
     elements.btnMenuCancel = document.getElementById('btn-menu-cancel');
+
+    // Context Menu
+    elements.contextMenu = document.getElementById('context-menu');
+    elements.ctxAddMemo = document.getElementById('ctx-add-memo');
+    elements.ctxRenameItem = document.getElementById('ctx-rename-item');
+    elements.ctxDeleteItem = document.getElementById('ctx-delete-item');
 }
 
 /**

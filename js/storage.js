@@ -146,13 +146,20 @@ export const CollectionStorage = {
         const collections = await this._getCollectionsRaw();
         const col = collections.find(c => c.id === collectionId);
         if (!col) return [];
-
+ 
         let items = col.items || [];
         if (!includeDeleted) {
             items = items.filter(i => !i.isDeleted);
         }
-
-        items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+ 
+        items.sort((a, b) => {
+            const orderA = a.sortOrder ?? 0;
+            const orderB = b.sortOrder ?? 0;
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            return (a.savedAt ?? 0) - (b.savedAt ?? 0);
+        });
         return items;
     },
 
@@ -251,18 +258,22 @@ export const CollectionStorage = {
         const collections = await this._getCollectionsRaw();
         const colIndex = collections.findIndex(c => c.id === collectionId);
         if (colIndex === -1) return;
-
+ 
         const col = collections[colIndex];
         const items = col.items || [];
-
+        const now = Date.now();
+ 
         itemIds.forEach((id, index) => {
             const item = items.find(i => i.id === id);
             if (item) {
-                item.sortOrder = index;
+                if (item.sortOrder !== index) {
+                    item.sortOrder = index;
+                    item.updatedAt = now;
+                }
             }
         });
-
-        col.updatedAt = Date.now();
+ 
+        col.updatedAt = now;
         await this._saveCollectionsRaw(collections);
     },
 

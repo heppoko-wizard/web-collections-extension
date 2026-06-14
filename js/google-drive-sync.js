@@ -937,5 +937,92 @@ export const GoogleDriveSync = {
         }
         
         throw new Error('GoogleDriveSync: Image index sync failed due to persistent conflicts.');
+    },
+
+    /**
+     * Google ドライブの画像インデックスからローカルに未同期の画像を一括ダウンロードします
+     * @param {function} onProgress - 進捗コールバック (detail => void)
+     * @param {boolean} interactive - 対話型認証を行うか
+     */
+    async downloadAllImageCaches(onProgress = () => {}, interactive = true) {
+        console.log('GoogleDriveSync: Starting bulk image cache download...');
+        onProgress({ status: 'searching', total: 0, completed: 0, failed: 0 });
+
+        // 1. 画像インデックスファイルをダウンロード
+        const pullResult = await this.pullImageIndex(interactive);
+        const cloudIndex = pullResult.data;
+
+        if (!cloudIndex || !cloudIndex.images || Object.keys(cloudIndex.images).length === 0) {
+            console.log('GoogleDriveSync: No images in cloud index to download.');
+            onProgress({ status: 'completed', total: 0, completed: 0, failed: 0 });
+            return { total: 0, completed: 0, failed: 0 };
+        }
+
+        const hashes = Object.keys(cloudIndex.images);
+        
+        // 2. ローカルキャッシュにすでに存在するものがあるか一括取得
+        const localCacheMap = await getLocalCachesBulk(hashes);
+
+        // 3. ダウンロード対象の抽出 (ローカルキャッシュに存在しないもの)
+        const toDownload = [];
+        for (const hash of hashes) {
+            if (!localCacheMap[hash]) {
+                toDownload.push({ hash, fileId: cloudIndex.images[hash].fileId });
+            }
+        }
+
+        const total = toDownload.length;
+        console.log(`GoogleDriveSync: Bulk download tasks - Missing: ${total} / Total in Cloud: ${hashes.length}`);
+
+        if (total === 0) {
+            onProgress({ status: 'completed', total: 0, completed: 0, failed: 0 });
+            return { total: 0, completed: 0, failed: 0 };
+        }
+
+        onProgress({ status: 'downloading', total, completed: 0, failed: 0 });
+
+        let completed = 0;
+        let failed = 0;
+
+        // 同期実行 (並行処理数3制限)
+        const maxConcurrency = 3;
+        const queue = [...toDownload];
+
+        const runDownload = async () => {
+            while (queue.length > 0) {
+                const item = queue.shift();
+                try {
+                    console.log(`GoogleDriveSync: Bulk downloading image cache: ${item.hash}`);
+                    const encryptedData = await this.downloadImageCache(item.fileId, interactive);
+                    const decompressedBase64 = await decrypt(encryptedData);
+                    await saveLocalCache(item.hash, decompressedBase64);
+                    completed++;
+                } catch (err) {
+                    console.error(`GoogleDriveSync: Failed to bulk download image ${item.hash}:`, err);
+                    failed++;
+                }
+
+                // 進行状況の報告
+                onProgress({
+                    status: 'downloading',
+                    total,
+                    completed,
+                    failed
+                });
+            }
+        };
+
+        const workers = Array(Math.min(maxConcurrency, queue.length)).fill(null).map(runDownload);
+        await Promise.all(workers);
+
+        console.log(`GoogleDriveSync: Bulk image cache download completed. Completed: ${completed}, Failed: ${failed}`);
+        onProgress({
+            status: 'completed',
+            total,
+            completed,
+            failed
+        });
+
+        return { total, completed, failed };
     }
 };

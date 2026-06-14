@@ -709,3 +709,120 @@ export async function syncNowFromHeader() {
         }
     }
 }
+
+export async function downloadAllImageCaches() {
+    if (!confirm('Googleドライブに保存されているすべての画像キャッシュをローカルに一括ダウンロードします。実行しますか？')) {
+        return;
+    }
+
+    const btn = elements.btnDownloadAllImages || document.getElementById('btn-download-all-images');
+    if (btn) btn.disabled = true;
+
+    const progressContainer = elements.downloadProgressContainer || document.getElementById('download-progress-container');
+    const progressStatus = elements.downloadProgressStatus || document.getElementById('download-progress-status');
+    const progressPercent = elements.downloadProgressPercent || document.getElementById('download-progress-percent');
+    const progressBar = elements.downloadProgressBar || document.getElementById('download-progress-bar');
+    const progressCounts = elements.downloadProgressCounts || document.getElementById('download-progress-counts');
+    const progressErrors = elements.downloadProgressErrors || document.getElementById('download-progress-errors');
+
+    if (progressContainer) progressContainer.style.display = 'block';
+    if (progressStatus) progressStatus.textContent = 'ダウンロード準備中...';
+    if (progressPercent) progressPercent.textContent = '0%';
+    if (progressBar) progressBar.style.width = '0%';
+    if (progressCounts) progressCounts.textContent = '処理: 0 / 0 件';
+    if (progressErrors) progressErrors.style.display = 'none';
+
+    try {
+        const response = await sendMessage({ action: 'downloadAllImageCaches' });
+        if (!response.success) {
+            throw new Error(response.error || 'ダウンロードの開始に失敗しました');
+        }
+    } catch (error) {
+        console.error('Failed to start bulk image download:', error);
+        alert('エラーが発生しました: ' + error.message);
+        if (btn) btn.disabled = false;
+        if (progressContainer) progressContainer.style.display = 'none';
+    }
+}
+
+export function onDownloadProgress(detail) {
+    const btn = elements.btnDownloadAllImages || document.getElementById('btn-download-all-images');
+    const progressContainer = elements.downloadProgressContainer || document.getElementById('download-progress-container');
+    const progressStatus = elements.downloadProgressStatus || document.getElementById('download-progress-status');
+    const progressPercent = elements.downloadProgressPercent || document.getElementById('download-progress-percent');
+    const progressBar = elements.downloadProgressBar || document.getElementById('download-progress-bar');
+    const progressCounts = elements.downloadProgressCounts || document.getElementById('download-progress-counts');
+    const progressErrors = elements.downloadProgressErrors || document.getElementById('download-progress-errors');
+
+    const total = detail.total || 0;
+    const completed = detail.completed || 0;
+    const failed = detail.failed || 0;
+    const processed = completed + failed;
+    
+    let percent = 0;
+    if (total > 0) {
+        percent = Math.round((processed / total) * 100);
+    }
+
+    if (progressPercent) progressPercent.textContent = `${percent}%`;
+    if (progressBar) progressBar.style.width = `${percent}%`;
+    if (progressCounts) progressCounts.textContent = `処理: ${processed} / ${total} 件`;
+
+    if (failed > 0 && progressErrors) {
+        progressErrors.style.display = 'block';
+        progressErrors.textContent = `エラー: ${failed} 件`;
+    }
+
+    if (detail.status === 'searching') {
+        if (progressStatus) progressStatus.textContent = '未同期の画像を検索中...';
+    } else if (detail.status === 'downloading') {
+        if (progressStatus) progressStatus.textContent = `ダウンロード中... (${completed}件完了)`;
+    } else if (detail.status === 'completed') {
+        if (progressStatus) progressStatus.textContent = 'ダウンロード完了';
+        if (btn) btn.disabled = false;
+        
+        setTimeout(() => {
+            alert(`画像キャッシュのダウンロードが完了しました。\n合計: ${total} 件\n成功: ${completed} 件\n失敗: ${failed} 件`);
+            if (progressContainer) progressContainer.style.display = 'none';
+        }, 500);
+    } else if (detail.status === 'error') {
+        if (progressStatus) progressStatus.textContent = 'エラーが発生しました';
+        if (btn) btn.disabled = false;
+        alert('ダウンロード中にエラーが発生しました：' + (detail.error || '不明なエラー'));
+    }
+}
+
+export function showContextMenu(itemId, x, y) {
+    const menu = elements.contextMenu || document.getElementById('context-menu');
+    if (!menu) return;
+
+    // クリックされたアイテムのIDを属性に格納
+    menu.dataset.itemId = itemId;
+
+    // 表示位置を設定（スクロール等に対応するため、画面全体の座標を使う）
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    menu.style.display = 'flex';
+
+    // メニューの外側をクリックしたときに閉じる処理を一時登録
+    const closeMenu = (e) => {
+        if (!menu.contains(e.target)) {
+            menu.style.display = 'none';
+            document.removeEventListener('click', closeMenu);
+            document.removeEventListener('contextmenu', closeMenu);
+        }
+    };
+
+    // 遅延して登録し、今回の右クリックイベント自体で即座に閉じるのを防ぐ
+    setTimeout(() => {
+        document.addEventListener('click', closeMenu);
+        document.addEventListener('contextmenu', closeMenu);
+    }, 10);
+}
+
+export function hideContextMenu() {
+    const menu = elements.contextMenu || document.getElementById('context-menu');
+    if (menu) {
+        menu.style.display = 'none';
+    }
+}

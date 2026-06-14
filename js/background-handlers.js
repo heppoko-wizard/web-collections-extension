@@ -223,6 +223,29 @@ export async function handleMessage(message, setupContextMenus) {
             break;
         }
 
+        case 'downloadAllImageCaches': {
+            // 非同期でダウンロードを開始し、呼び出し元には即座に成功を返してブロッキングを防ぐ
+            (async () => {
+                try {
+                    await GoogleDriveSync.downloadAllImageCaches((detail) => {
+                        chrome.runtime.sendMessage({
+                            action: 'downloadProgress',
+                            detail
+                        }).catch(() => {
+                            // 受信側（サイドパネルなど）が閉じられている場合のエラーを無視
+                        });
+                    }, true);
+                } catch (err) {
+                    console.error('Background: Bulk image cache download task failed:', err);
+                    chrome.runtime.sendMessage({
+                        action: 'downloadProgress',
+                        detail: { status: 'error', error: err.message }
+                    }).catch(() => {});
+                }
+            })();
+            break;
+        }
+
         case 'getLocalCache': {
             response.data = await getLocalCache(message.hash);
             break;

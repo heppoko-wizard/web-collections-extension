@@ -115,6 +115,14 @@ export function initEvents(handlers) {
         });
     }
 
+    if (elements.btnDownloadAllImages) {
+        elements.btnDownloadAllImages.addEventListener('click', () => {
+            if (handlers.downloadAllImageCaches) {
+                handlers.downloadAllImageCaches();
+            }
+        });
+    }
+
     // Display Settings
     if (elements.settingTileWidth) {
         elements.settingTileWidth.addEventListener('input', (e) => {
@@ -167,6 +175,7 @@ export function initEvents(handlers) {
             hideModal(elements.modalNote);
             hideModal(elements.modalCollectionMenu);
             hideModal(elements.modalCreateCollection);
+            if (handlers.hideContextMenu) handlers.hideContextMenu();
         }
     });
 
@@ -176,6 +185,10 @@ export function initEvents(handlers) {
             handlers.loadCollections();
             if (state.currentView === 'detail' && state.currentCollectionId === message.collectionId) {
                 handlers.openCollection(state.currentCollectionId);
+            }
+        } else if (message.action === 'downloadProgress') {
+            if (handlers.onDownloadProgress) {
+                handlers.onDownloadProgress(message.detail);
             }
         }
     });
@@ -216,4 +229,48 @@ export function initEvents(handlers) {
             return;
         }
     });
+
+    // Context Menu Event (Right Click)
+    elements.itemsContainer.addEventListener('contextmenu', (e) => {
+        const itemCard = e.target.closest('.item-card');
+        if (!itemCard) return;
+
+        e.preventDefault();
+        const itemId = itemCard.dataset.id;
+        
+        if (handlers.showContextMenu) {
+            handlers.showContextMenu(itemId, e.clientX, e.clientY);
+        }
+    });
+
+    // Context Menu Items Click
+    if (elements.ctxAddMemo) {
+        elements.ctxAddMemo.addEventListener('click', (e) => {
+            const itemId = elements.contextMenu.dataset.itemId;
+            if (itemId && handlers.addItemMemo) {
+                handlers.addItemMemo(itemId);
+            }
+            if (handlers.hideContextMenu) handlers.hideContextMenu();
+        });
+    }
+
+    if (elements.ctxRenameItem) {
+        elements.ctxRenameItem.addEventListener('click', (e) => {
+            const itemId = elements.contextMenu.dataset.itemId;
+            if (itemId && handlers.renameItem) {
+                handlers.renameItem(itemId);
+            }
+            if (handlers.hideContextMenu) handlers.hideContextMenu();
+        });
+    }
+
+    if (elements.ctxDeleteItem) {
+        elements.ctxDeleteItem.addEventListener('click', (e) => {
+            const itemId = elements.contextMenu.dataset.itemId;
+            if (itemId && handlers.deleteItem) {
+                handlers.deleteItem(itemId);
+            }
+            if (handlers.hideContextMenu) handlers.hideContextMenu();
+        });
+    }
 }
