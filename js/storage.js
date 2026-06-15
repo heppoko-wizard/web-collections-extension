@@ -435,12 +435,16 @@ export const CollectionStorage = {
                 const existingCol = currentCollections[existingIndex];
 
                 // メタデータのマージ
-                existingCol.name = col.name;
-                existingCol.updatedAt = Math.max(existingCol.updatedAt || 0, col.updatedAt || 0, Date.now());
-                if (col.createdAt) {
-                    existingCol.createdAt = col.createdAt;
+                const importUpdatedAt = col.updatedAt || 0;
+                const localUpdatedAt = existingCol.updatedAt || 0;
+                if (importUpdatedAt > localUpdatedAt) {
+                    existingCol.name = col.name;
+                    if (col.createdAt) {
+                        existingCol.createdAt = col.createdAt;
+                    }
+                    existingCol.isDeleted = col.isDeleted ?? existingCol.isDeleted ?? false;
                 }
-                existingCol.isDeleted = col.isDeleted ?? existingCol.isDeleted ?? false;
+                existingCol.updatedAt = Math.max(localUpdatedAt, importUpdatedAt);
 
                 // アイテムデータのマージ
                 if (col.items && Array.isArray(col.items)) {
@@ -543,12 +547,16 @@ export const CollectionStorage = {
             // 既存のコレクションがある場合はマージ
             const existingCol = collections[colIndex];
 
-            existingCol.name = data.name;
-            existingCol.updatedAt = Math.max(existingCol.updatedAt || 0, data.updatedAt || 0);
-            if (data.createdAt) {
-                existingCol.createdAt = data.createdAt;
+            const importUpdatedAt = data.updatedAt || 0;
+            const localUpdatedAt = existingCol.updatedAt || 0;
+            if (importUpdatedAt > localUpdatedAt) {
+                existingCol.name = data.name;
+                if (data.createdAt) {
+                    existingCol.createdAt = data.createdAt;
+                }
+                existingCol.isDeleted = data.isDeleted ?? existingCol.isDeleted ?? false;
             }
-            existingCol.isDeleted = data.isDeleted ?? existingCol.isDeleted ?? false;
+            existingCol.updatedAt = Math.max(localUpdatedAt, importUpdatedAt);
 
             if (data.items && Array.isArray(data.items)) {
                 const localItems = existingCol.items || [];

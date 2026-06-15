@@ -29,7 +29,6 @@ export function initElements() {
     elements.btnNewCollection = document.getElementById('btn-new-collection');
     elements.btnSettings = document.getElementById('btn-settings');
     elements.btnBack = document.getElementById('btn-back');
-    elements.btnBackSettings = document.getElementById('btn-back-settings');
     elements.btnAddPage = document.getElementById('btn-add-page');
     elements.btnAddAllTabs = document.getElementById('btn-add-all-tabs');
     elements.btnAddNote = document.getElementById('btn-add-note');
@@ -92,12 +91,47 @@ export function showView(viewName) {
     elements.viewDetail.classList.remove('active');
     elements.viewSettings.classList.remove('active');
 
+    // ヘッダー内の全動的要素を初期非表示化
+    if (elements.btnBack) elements.btnBack.style.display = 'none';
+    if (elements.collectionTitle) elements.collectionTitle.style.display = 'none';
+    if (elements.btnNewCollection) elements.btnNewCollection.style.display = 'none';
+    
+    // 詳細画面アクションの非表示化
+    if (elements.btnAddPage) elements.btnAddPage.style.display = 'none';
+    if (elements.btnAddAllTabs) elements.btnAddAllTabs.style.display = 'none';
+    if (elements.btnAddNote) elements.btnAddNote.style.display = 'none';
+    if (elements.btnLayoutToggle) elements.btnLayoutToggle.style.display = 'none';
+    if (elements.btnOpenAll) elements.btnOpenAll.style.display = 'none';
+    if (elements.btnCollectionMenu) elements.btnCollectionMenu.style.display = 'none';
+    
+    // 共通アクションの初期表示
+    if (elements.btnSyncHeader) elements.btnSyncHeader.style.display = 'inline-flex';
+    if (elements.btnThemeToggle) elements.btnThemeToggle.style.display = 'inline-flex';
+    if (elements.btnSettings) elements.btnSettings.style.display = 'inline-flex';
+
     if (viewName === 'list') {
         elements.viewList.classList.add('active');
+        if (elements.btnNewCollection) elements.btnNewCollection.style.display = 'inline-flex';
     } else if (viewName === 'detail') {
         elements.viewDetail.classList.add('active');
+        if (elements.btnBack) elements.btnBack.style.display = 'inline-flex';
+        if (elements.collectionTitle) elements.collectionTitle.style.display = 'block';
+        
+        // 詳細画面用アクションを表示
+        if (elements.btnAddPage) elements.btnAddPage.style.display = 'inline-flex';
+        if (elements.btnAddAllTabs) elements.btnAddAllTabs.style.display = 'inline-flex';
+        if (elements.btnAddNote) elements.btnAddNote.style.display = 'inline-flex';
+        if (elements.btnLayoutToggle) elements.btnLayoutToggle.style.display = 'inline-flex';
+        if (elements.btnOpenAll) elements.btnOpenAll.style.display = 'inline-flex';
+        if (elements.btnCollectionMenu) elements.btnCollectionMenu.style.display = 'inline-flex';
     } else if (viewName === 'settings') {
         elements.viewSettings.classList.add('active');
+        if (elements.btnBack) elements.btnBack.style.display = 'inline-flex';
+        
+        // 設定画面時は右側の共通アクションを非表示
+        if (elements.btnSyncHeader) elements.btnSyncHeader.style.display = 'none';
+        if (elements.btnThemeToggle) elements.btnThemeToggle.style.display = 'none';
+        if (elements.btnSettings) elements.btnSettings.style.display = 'none';
     }
 }
 

@@ -110,29 +110,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px var(--spacing-md);
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  font-family: var(--font-heading);
-  font-size: var(--font-size-lg);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.header-icon {
-  font-size: var(--font-size-xl);
-  filter: grayscale(1); /* 絵文字をモノトーンに抑制 */
+  min-height: 48px;
 }
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: var(--spacing-xs);
+  flex-wrap: wrap;
 }
 
 .rotating svg {
@@ -300,15 +290,9 @@ body {
 /* ============================================
    Collection Detail View
    ============================================ */
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  margin-bottom: 10px;
-}
-
 .collection-title {
   flex: 1;
+  min-width: 100px;
   font-family: var(--font-heading);
   font-size: var(--font-size-lg);
   font-weight: 600;
@@ -317,16 +301,15 @@ body {
   outline: none;
   border: 1px solid transparent;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .collection-title:focus {
   background: var(--bg-surface);
   border-color: var(--border-active);
-}
-
-.detail-actions {
-  display: flex;
-  gap: var(--spacing-xs);
+  white-space: normal; /* 編集時は折り返し許可 */
 }
 
 /* ============================================

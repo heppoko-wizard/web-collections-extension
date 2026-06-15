@@ -12,16 +12,49 @@
   <div id="app">
     <!-- ヘッダー -->
     <header class="header">
-      <h1 class="header-title">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="header-icon"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 2v20"/></svg>
-        <span>コレクション</span>
-      </h1>
+      <!-- 戻るボタン (詳細画面・設定画面で表示) -->
+      <button id="btn-back" class="icon-btn" aria-label="戻る" style="display: none;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      </button>
+
+      <!-- コレクションタイトル (詳細画面でのみ表示、インライン編集可能) -->
+      <h2 id="collection-title" class="collection-title" contenteditable="true" style="display: none;"></h2>
+
+      <!-- アクションボタン群 -->
       <div class="header-actions">
+        <!-- 一覧画面専用: 新規コレクション作成 -->
+        <button id="btn-new-collection" class="btn btn-primary" title="新しいコレクションを作成">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>新規</span>
+        </button>
+
+        <!-- 詳細画面専用: 追加アクション (アイコンのみ) -->
+        <button id="btn-add-page" class="icon-btn" aria-label="このページを追加" title="このページを追加" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+        </button>
+        <button id="btn-add-all-tabs" class="icon-btn" aria-label="全タブを追加" title="現在のウィンドウの全タブを追加" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M11 3v18"/><path d="M15 3v18"/><path d="M19 3v18"/></svg>
+        </button>
+        <button id="btn-add-note" class="icon-btn" aria-label="メモを追加" title="メモを追加" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>
+        </button>
+        
+        <!-- 詳細画面専用: 操作アクション -->
+        <button id="btn-layout-toggle" class="icon-btn" aria-label="表示切り替え" title="表示切り替え" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+        </button>
+        <button id="btn-open-all" class="icon-btn" aria-label="すべて開く" title="すべて開く" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </button>
+        <button id="btn-collection-menu" class="icon-btn" aria-label="メニュー" title="メニュー" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+        </button>
+
+        <!-- 共通アクション -->
         <button id="btn-sync-header" class="icon-btn" aria-label="Googleドライブと同期" title="Googleドライブと同期">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
         </button>
         <button id="btn-theme-toggle" class="icon-btn" aria-label="テーマ切り替え" title="テーマ切り替え">
-          <!-- Default is moon (dark mode). JS will toggle this. -->
           <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
           <svg id="icon-sun" style="display: none;" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
         </button>
@@ -35,12 +68,6 @@
     <main class="main-content">
       <!-- コレクション一覧ビュー -->
       <section id="view-list" class="view active">
-        <div class="action-bar">
-          <button id="btn-new-collection" class="btn btn-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            新しいコレクション
-          </button>
-        </div>
         <div id="collections-container" class="collections-list">
           <!-- コレクションカードがここに挿入される -->
         </div>
@@ -48,37 +75,6 @@
 
       <!-- コレクション詳細ビュー -->
       <section id="view-detail" class="view">
-        <div class="detail-header">
-          <button id="btn-back" class="icon-btn" aria-label="戻る">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-          </button>
-          <h2 id="collection-title" class="collection-title" contenteditable="true"></h2>
-          <div class="detail-actions">
-            <button id="btn-layout-toggle" class="icon-btn" aria-label="表示切り替え" title="表示切り替え">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-            </button>
-            <button id="btn-open-all" class="icon-btn" aria-label="すべて開く" title="すべて開く">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-            </button>
-            <button id="btn-collection-menu" class="icon-btn" aria-label="メニュー" title="メニュー">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
-            </button>
-          </div>
-        </div>
-        <div class="action-bar">
-          <button id="btn-add-page" class="btn btn-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
-            このページ
-          </button>
-          <button id="btn-add-all-tabs" class="btn btn-secondary" title="現在のウィンドウの全タブを追加">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M11 3v18"/><path d="M15 3v18"/><path d="M19 3v18"/></svg>
-            全タブ
-          </button>
-          <button id="btn-add-note" class="btn btn-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>
-            メモ
-          </button>
-        </div>
         <div id="items-container" class="items-list-container">
           <div id="virtual-scroll-spacer" class="virtual-scroll-spacer">
             <div id="items-list" class="items-list">
@@ -90,11 +86,8 @@
 
       <!-- 設定ビュー -->
       <section id="view-settings" class="view">
-        <div class="detail-header">
-          <button id="btn-back-settings" class="icon-btn" aria-label="戻る">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-          </button>
-          <h2>設定</h2>
+        <div class="settings-title-bar" style="margin-bottom: 15px;">
+          <h2 style="font-size: 16px;">設定</h2>
         </div>
         <div class="settings-content">
           <!-- 表示設定 -->

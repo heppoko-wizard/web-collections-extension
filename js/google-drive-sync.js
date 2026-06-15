@@ -874,6 +874,8 @@ export const GoogleDriveSync = {
                 
                 const uploadQueue = [...toUpload];
                 const uploadedItems = [];
+                let failedUploads = 0;
+                let failedDownloads = 0;
                 const runUpload = async () => {
                     while (uploadQueue.length > 0) {
                         const item = uploadQueue.shift();
@@ -919,7 +921,7 @@ export const GoogleDriveSync = {
                             }
                         } catch (err) {
                             console.error(`GoogleDriveSync: Failed to upload image ${item.hash}:`, err);
-                            throw err;
+                            failedUploads++;
                         }
                     }
                 };
@@ -935,7 +937,7 @@ export const GoogleDriveSync = {
                             await saveLocalCache(item.hash, decompressedBase64);
                         } catch (err) {
                             console.error(`GoogleDriveSync: Failed to download image ${item.hash}:`, err);
-                            throw err;
+                            failedDownloads++;
                         }
                     }
                 };
@@ -944,6 +946,10 @@ export const GoogleDriveSync = {
                 const downloadWorkers = Array(Math.min(maxConcurrency, downloadQueue.length)).fill(null).map(runDownload);
                 
                 await Promise.all([...uploadWorkers, ...downloadWorkers]);
+                
+                if (failedUploads > 0 || failedDownloads > 0) {
+                    console.warn(`GoogleDriveSync: Image sync completed with partial errors. Failed uploads: ${failedUploads}, Failed downloads: ${failedDownloads}`);
+                }
                 
                 // アップロード成功したものをクラウドインデックス情報に追加
                 uploadedItems.forEach(item => {

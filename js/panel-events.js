@@ -26,7 +26,6 @@ export function initEvents(handlers) {
         showView('list');
         handlers.renderCollectionsList();
     });
-    elements.btnBackSettings.addEventListener('click', () => showView('list'));
 
     // Collection detail
     elements.btnAddPage.addEventListener('click', handlers.addCurrentPage);

@@ -82,6 +82,7 @@ test('CollectionStorage - CRUD operations', async (t) => {
         // ローカルコレクションの直接書き換えでテスト用の固定IDアイテムを設定
         const collections = await CollectionStorage._getCollectionsRaw();
         const targetCol = collections.find(c => c.id === col.id);
+        targetCol.updatedAt = 1000;
         targetCol.items = [
             {
                 id: 'item-1',
@@ -152,6 +153,7 @@ test('CollectionStorage - CRUD operations', async (t) => {
         
         const collections = await CollectionStorage._getCollectionsRaw();
         const targetCol = collections.find(c => c.id === col.id);
+        targetCol.updatedAt = 1000;
         targetCol.items = [
             {
                 id: 'item-a',
