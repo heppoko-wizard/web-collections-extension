@@ -77,7 +77,7 @@ export function renderCollectionsList(elements, onOpenCollection) {
  * アイテム一覧の描画
  * @param {object} elements
  */
-export function renderItems(elements) {
+export function renderItems(elements, options = {}) {
     const renderGeneration = ++itemsRenderGeneration;
     const collectionId = state.currentCollectionId;
     const collection = state.collections.find(c => c.id === collectionId);
@@ -90,10 +90,16 @@ export function renderItems(elements) {
 
     const items = state.currentItems;
     const container = elements.itemsList;
+    const scrollContainer = elements.itemsContainer;
+    const scrollAnchor = options.preserveScroll
+        ? captureScrollAnchor(scrollContainer, container)
+        : null;
+    let scrollRestored = !scrollAnchor;
 
     // Apply layout class
     container.className = 'items-list'; // Reset
     container.classList.add(`layout-${state.layoutMode}`);
+    container.classList.toggle('selection-mode', state.selectionMode);
 
     // Update toggle button icon
     if (elements.btnLayoutToggle) {
@@ -135,6 +141,10 @@ export function renderItems(elements) {
         container.insertAdjacentHTML('beforeend', html);
         applyImageCaches(container);
 
+        if (!scrollRestored) {
+            scrollRestored = restoreScrollAnchor(scrollContainer, container, scrollAnchor, endIndex === items.length);
+        }
+
         if (startIndex === 0) {
             prefetchImagesAroundViewport(collectionId, 0, 20);
         }
@@ -147,7 +157,6 @@ export function renderItems(elements) {
     renderBatch(0);
 
     // Attach click listener for event delegation if not already attached
-    const scrollContainer = elements.itemsContainer;
     if (!scrollContainer.dataset.hasScrollListener) {
         scrollContainer.addEventListener('click', (e) => {
             const target = e.target;
@@ -156,31 +165,56 @@ export function renderItems(elements) {
             const menuBtn = target.closest('.btn-item-menu');
             if (menuBtn) {
                 e.stopPropagation();
-                const id = menuBtn.dataset.id;
-                // Close others
-                elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => {
-                    if (m.dataset.id !== id) m.classList.remove('active');
+                const dropdown = menuBtn.parentElement?.querySelector('.item-menu-dropdown');
+                const shouldOpen = dropdown && !dropdown.classList.contains('active');
+
+                elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(menu => {
+                    menu.classList.remove('active', 'open-upward');
+                    menu.closest('.item-actions')?.classList.remove('menu-open');
+                    menu.closest('.item-card')?.classList.remove('menu-open');
+                    menu.parentElement?.querySelector('.btn-item-menu')?.setAttribute('aria-expanded', 'false');
                 });
-                // Toggle this
-                const dropdown = elements.itemsList.querySelector(`.item-menu-dropdown[data-id="${id}"]`);
-                if (dropdown) dropdown.classList.toggle('active');
+
+                if (dropdown && shouldOpen) {
+                    dropdown.classList.add('active');
+                    dropdown.closest('.item-actions')?.classList.add('menu-open');
+                    dropdown.closest('.item-card')?.classList.add('menu-open');
+
+                    const menuRect = dropdown.getBoundingClientRect();
+                    const viewportRect = scrollContainer.getBoundingClientRect();
+                    const buttonRect = menuBtn.getBoundingClientRect();
+                    if (menuRect.bottom > viewportRect.bottom && buttonRect.top - menuRect.height >= viewportRect.top) {
+                        dropdown.classList.add('open-upward');
+                    }
+                }
+                menuBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
                 return;
             }
 
             // Item Card Click (Open Link)
             const card = target.closest('.item-card');
             if (card) {
-                if (target.closest('button') || target.closest('a') || target.closest('.item-menu-dropdown')) {
+                if (target.closest('button') || target.closest('a') || target.closest('.item-select-control') || target.closest('.item-menu-dropdown')) {
                     return;
                 }
                 const id = card.dataset.id;
+                if (state.selectionMode) {
+                    const event = new CustomEvent('itemSelectionToggle', { detail: { id } });
+                    scrollContainer.dispatchEvent(event);
+                    return;
+                }
                 // Dispatches a custom event to be handled by Actions/Events
                 const event = new CustomEvent('itemClick', { detail: { id } });
                 scrollContainer.dispatchEvent(event);
             }
 
             // Close all menus when clicking elsewhere
-            elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(m => m.classList.remove('active'));
+            elements.itemsList.querySelectorAll('.item-menu-dropdown.active').forEach(menu => {
+                menu.classList.remove('active', 'open-upward');
+                menu.closest('.item-actions')?.classList.remove('menu-open');
+                menu.closest('.item-card')?.classList.remove('menu-open');
+                menu.parentElement?.querySelector('.btn-item-menu')?.setAttribute('aria-expanded', 'false');
+            });
         });
         scrollContainer.dataset.hasScrollListener = 'true';
     }
@@ -270,18 +304,23 @@ export function renderItem(item) {
     const memoContent = item.memo
         ? `<div class="item-memo">${ICONS.MEMO} ${escapeHtml(item.memo)}</div>`
         : '';
+    const escapedId = escapeHtml(item.id);
+    const isSelected = state.selectedItemIds.has(item.id);
 
     return `
-    <div class="item-card type-${item.type}" data-id="${item.id}">
+    <div class="item-card type-${item.type}${isSelected ? ' selected' : ''}" data-id="${escapedId}">
+      <label class="item-select-control" title="選択">
+        <input type="checkbox" class="item-select-checkbox" data-id="${escapedId}" ${isSelected ? 'checked' : ''}>
+      </label>
       <div class="item-thumb">${thumbContent}</div>
       <div class="item-content">${content}${memoContent}</div>
       <div class="item-actions">
         <div class="item-menu-container">
-          <button class="icon-btn btn-item-menu" data-id="${item.id}" title="メニュー">${ICONS.MENU}</button>
-          <div class="item-menu-dropdown" data-id="${item.id}">
-            <button class="menu-item btn-add-memo" data-id="${item.id}">${ICONS.MEMO} メモを追加</button>
-            <button class="menu-item btn-rename-item" data-id="${item.id}">${ICONS.RENAME} 名前を変更</button>
-            <button class="menu-item btn-delete-item" data-id="${item.id}">${ICONS.DELETE} 削除</button>
+          <button type="button" class="icon-btn btn-item-menu" data-id="${escapedId}" title="メニュー" aria-label="アイテムメニュー" aria-expanded="false">${ICONS.MENU}</button>
+          <div class="item-menu-dropdown" data-id="${escapedId}">
+            <button type="button" class="menu-item btn-add-memo" data-id="${escapedId}">${ICONS.MEMO} メモを追加</button>
+            <button type="button" class="menu-item btn-rename-item" data-id="${escapedId}">${ICONS.RENAME} 名前を変更</button>
+            <button type="button" class="menu-item btn-delete-item" data-id="${escapedId}">${ICONS.DELETE} 削除</button>
           </div>
         </div>
       </div>
@@ -290,6 +329,39 @@ export function renderItem(item) {
 }
 
 
+function captureScrollAnchor(scrollContainer, container) {
+    if (!scrollContainer || scrollContainer.scrollTop <= 0) return null;
+
+    const viewportTop = scrollContainer.getBoundingClientRect().top;
+    const anchorCard = Array.from(container.querySelectorAll('.item-card')).find(card => {
+        return card.getBoundingClientRect().bottom > viewportTop;
+    });
+
+    return {
+        id: anchorCard?.dataset.id || null,
+        offset: anchorCard ? anchorCard.getBoundingClientRect().top - viewportTop : 0,
+        scrollTop: scrollContainer.scrollTop
+    };
+}
+
+function restoreScrollAnchor(scrollContainer, container, anchor, finalBatch) {
+    if (!anchor) return true;
+
+    if (anchor.id) {
+        const anchorCard = Array.from(container.querySelectorAll('.item-card')).find(card => {
+            return card.dataset.id === anchor.id;
+        });
+        if (anchorCard) {
+            const viewportTop = scrollContainer.getBoundingClientRect().top;
+            scrollContainer.scrollTop += anchorCard.getBoundingClientRect().top - viewportTop - anchor.offset;
+            return true;
+        }
+    }
+
+    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+    scrollContainer.scrollTop = Math.min(anchor.scrollTop, maxScrollTop);
+    return finalBatch || maxScrollTop >= anchor.scrollTop;
+}
 
 // ============================================
 // Utilities

@@ -11,6 +11,8 @@ export const state = {
     isCollectionLoading: false,
     currentView: 'list', // 'list' | 'detail' | 'settings'
     layoutMode: 'list', // 'list' | 'grid'
+    selectionMode: false,
+    selectedItemIds: new Set(),
     settings: {}
 };
 

@@ -62,6 +62,25 @@ test('CollectionStorage - CRUD operations', async (t) => {
         assert.strictEqual(items[0].title, 'Example');
     });
 
+    await t.test('removeItems logically deletes multiple items in one mutation', async () => {
+        mockStorage.clear();
+        const col = await CollectionStorage.createCollection('Bulk Delete');
+        const first = await CollectionStorage.addItem(col.id, { type: 'note', content: 'first' });
+        const second = await CollectionStorage.addItem(col.id, { type: 'note', content: 'second' });
+        const third = await CollectionStorage.addItem(col.id, { type: 'note', content: 'third' });
+
+        const deletedCount = await CollectionStorage.removeItems(col.id, [first.id, third.id, 'missing']);
+        assert.strictEqual(deletedCount, 2);
+
+        const visibleItems = await CollectionStorage.getItemsByCollection(col.id);
+        assert.deepStrictEqual(visibleItems.map(item => item.id), [second.id]);
+
+        const rawCollection = (await CollectionStorage._getCollectionsRaw()).find(item => item.id === col.id);
+        assert.strictEqual(rawCollection.items.find(item => item.id === first.id).isDeleted, true);
+        assert.strictEqual(rawCollection.items.find(item => item.id === second.id).isDeleted, false);
+        assert.strictEqual(rawCollection.items.find(item => item.id === third.id).isDeleted, true);
+    });
+
     await t.test('update and delete collection', async () => {
         const col = await CollectionStorage.createCollection('Update Me');
         await CollectionStorage.updateCollection(col.id, { name: 'Updated Name' });

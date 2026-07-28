@@ -29,6 +29,45 @@ async function sendMessage(message) {
 
 let collectionLoadRequestId = 0;
 
+function updateSelectionUi() {
+    const currentIds = new Set(state.currentItems.map(item => item.id));
+    state.selectedItemIds = new Set(
+        Array.from(state.selectedItemIds).filter(id => currentIds.has(id))
+    );
+
+    if (elements.itemsList) {
+        elements.itemsList.classList.toggle('selection-mode', state.selectionMode);
+        elements.itemsList.querySelectorAll('.item-card').forEach(card => {
+            const selected = state.selectedItemIds.has(card.dataset.id);
+            card.classList.toggle('selected', selected);
+            const checkbox = card.querySelector('.item-select-checkbox');
+            if (checkbox) checkbox.checked = selected;
+        });
+    }
+
+    if (elements.bulkActions) elements.bulkActions.hidden = !state.selectionMode;
+    if (elements.btnSelectionToggle) {
+        elements.btnSelectionToggle.classList.toggle('active', state.selectionMode);
+        elements.btnSelectionToggle.setAttribute('aria-pressed', state.selectionMode ? 'true' : 'false');
+        elements.btnSelectionToggle.title = state.selectionMode ? '複数選択を終了' : '複数選択';
+    }
+
+    const selectedCount = state.selectedItemIds.size;
+    const totalCount = state.currentItems.length;
+    if (elements.selectedCount) elements.selectedCount.textContent = `${selectedCount} / ${totalCount}件`;
+    if (elements.btnDeleteSelected) elements.btnDeleteSelected.disabled = selectedCount === 0;
+    if (elements.selectAllItems) {
+        elements.selectAllItems.checked = totalCount > 0 && selectedCount === totalCount;
+        elements.selectAllItems.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+        elements.selectAllItems.disabled = totalCount === 0;
+    }
+}
+
+function updateCurrentCollectionCount() {
+    const collection = state.collections.find(item => item.id === state.currentCollectionId);
+    if (collection) collection.itemCount = state.currentItems.length;
+}
+
 export async function loadCollections() {
     const response = await sendMessage({ action: 'getCollections' });
     if (response.success) {
@@ -65,6 +104,9 @@ export async function openCollection(id) {
     state.currentCollectionId = id;
     state.currentItems = [];
     state.isCollectionLoading = true;
+    state.selectionMode = false;
+    state.selectedItemIds = new Set();
+    updateSelectionUi();
     showView('detail');
     chrome.storage.local.set({
         wc_current_view: 'detail',
@@ -100,6 +142,9 @@ export async function deleteCurrentCollection() {
         });
         state.collections = state.collections.filter(c => c.id !== state.currentCollectionId);
         state.currentCollectionId = null;
+        state.selectionMode = false;
+        state.selectedItemIds = new Set();
+        updateSelectionUi();
         showView('list');
         Render.renderCollectionsList(elements, openCollection);
         hideModal(elements.modalCollectionMenu);
@@ -220,7 +265,15 @@ export async function deleteItem(itemId) {
             itemId
         });
         state.currentItems = state.currentItems.filter(i => i.id !== itemId);
-        Render.renderItems(elements);
+        state.selectedItemIds.delete(itemId);
+        updateCurrentCollectionCount();
+
+        const deletedCard = Array.from(elements.itemsList.querySelectorAll('.item-card')).find(card => {
+            return card.dataset.id === itemId;
+        });
+        deletedCard?.remove();
+        if (state.currentItems.length === 0) Render.renderItems(elements);
+        updateSelectionUi();
     } catch (err) {
         console.error('Failed to delete item:', err);
         alert('アイテムの削除に失敗しました：' + err.message);
@@ -238,7 +291,8 @@ export async function updateItem(itemId, updates) {
         const index = state.currentItems.findIndex(i => i.id === itemId);
         if (index !== -1) {
             state.currentItems[index] = response.data;
-            Render.renderItems(elements);
+            Render.renderItems(elements, { preserveScroll: true });
+            updateSelectionUi();
         }
     } catch (err) {
         console.error('Failed to update item:', err);
@@ -552,8 +606,60 @@ export async function autoSyncPull() {
 
 export function toggleLayout() {
     state.layoutMode = state.layoutMode === 'list' ? 'grid' : 'list';
-    Render.renderItems(elements);
+    Render.renderItems(elements, { preserveScroll: true });
+    updateSelectionUi();
     chrome.storage.local.set({ wc_layout_mode: state.layoutMode });
+}
+
+export function toggleSelectionMode(force) {
+    state.selectionMode = typeof force === 'boolean' ? force : !state.selectionMode;
+    if (!state.selectionMode) state.selectedItemIds = new Set();
+    updateSelectionUi();
+}
+
+export function toggleItemSelection(itemId, selected) {
+    if (!state.selectionMode) state.selectionMode = true;
+
+    const nextSelected = new Set(state.selectedItemIds);
+    const shouldSelect = typeof selected === 'boolean' ? selected : !nextSelected.has(itemId);
+    if (shouldSelect) nextSelected.add(itemId);
+    else nextSelected.delete(itemId);
+    state.selectedItemIds = nextSelected;
+    updateSelectionUi();
+}
+
+export function setAllItemsSelected(selected) {
+    if (!state.selectionMode) state.selectionMode = true;
+    state.selectedItemIds = selected
+        ? new Set(state.currentItems.map(item => item.id))
+        : new Set();
+    updateSelectionUi();
+}
+
+export async function deleteSelectedItems() {
+    const itemIds = Array.from(state.selectedItemIds).filter(id => {
+        return state.currentItems.some(item => item.id === id);
+    });
+    if (itemIds.length === 0) return;
+    if (!confirm(`選択した${itemIds.length}件を削除しますか？`)) return;
+
+    try {
+        await sendMessage({
+            action: 'removeItems',
+            collectionId: state.currentCollectionId,
+            itemIds
+        });
+        const deletedIds = new Set(itemIds);
+        state.currentItems = state.currentItems.filter(item => !deletedIds.has(item.id));
+        state.selectedItemIds = new Set();
+        if (state.currentItems.length === 0) state.selectionMode = false;
+        updateCurrentCollectionCount();
+        Render.renderItems(elements, { preserveScroll: true });
+        updateSelectionUi();
+    } catch (err) {
+        console.error('Failed to delete selected items:', err);
+        alert('選択したアイテムの削除に失敗しました：' + err.message);
+    }
 }
 
 export async function saveSettings(settings) {

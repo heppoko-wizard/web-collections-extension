@@ -296,6 +296,14 @@ export async function handleMessage(message, setupContextMenus) {
                 return response;
             });
 
+        case 'removeItems':
+            return runDataExclusive(async () => {
+                response.deletedCount = await CollectionStorage.removeItems(message.collectionId, message.itemIds);
+                if (setupContextMenus) setupContextMenus();
+                scheduleAutoSync();
+                return response;
+            });
+
         case 'updateCollection':
             return runDataExclusive(async () => {
                 await CollectionStorage.updateCollection(message.id, message.updates);

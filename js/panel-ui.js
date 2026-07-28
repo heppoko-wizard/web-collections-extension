@@ -34,7 +34,13 @@ export function initElements() {
     elements.btnAddNote = document.getElementById('btn-add-note');
     elements.btnOpenAll = document.getElementById('btn-open-all');
     elements.btnCollectionMenu = document.getElementById('btn-collection-menu');
+    elements.btnSelectionToggle = document.getElementById('btn-selection-toggle');
     elements.btnLayoutToggle = document.getElementById('btn-layout-toggle');
+    elements.bulkActions = document.getElementById('bulk-actions');
+    elements.selectAllItems = document.getElementById('select-all-items');
+    elements.selectedCount = document.getElementById('selected-count');
+    elements.btnDeleteSelected = document.getElementById('btn-delete-selected');
+    elements.btnCancelSelection = document.getElementById('btn-cancel-selection');
 
     // Settings
     elements.lastSyncTime = document.getElementById('last-sync-time');
@@ -105,6 +111,7 @@ export function showView(viewName) {
     if (elements.btnAddPage) elements.btnAddPage.style.display = 'none';
     if (elements.btnAddAllTabs) elements.btnAddAllTabs.style.display = 'none';
     if (elements.btnAddNote) elements.btnAddNote.style.display = 'none';
+    if (elements.btnSelectionToggle) elements.btnSelectionToggle.style.display = 'none';
     if (elements.btnLayoutToggle) elements.btnLayoutToggle.style.display = 'none';
     if (elements.btnOpenAll) elements.btnOpenAll.style.display = 'none';
     if (elements.btnCollectionMenu) elements.btnCollectionMenu.style.display = 'none';
@@ -126,6 +133,7 @@ export function showView(viewName) {
         if (elements.btnAddPage) elements.btnAddPage.style.display = 'inline-flex';
         if (elements.btnAddAllTabs) elements.btnAddAllTabs.style.display = 'inline-flex';
         if (elements.btnAddNote) elements.btnAddNote.style.display = 'inline-flex';
+        if (elements.btnSelectionToggle) elements.btnSelectionToggle.style.display = 'inline-flex';
         if (elements.btnLayoutToggle) elements.btnLayoutToggle.style.display = 'inline-flex';
         if (elements.btnOpenAll) elements.btnOpenAll.style.display = 'inline-flex';
         if (elements.btnCollectionMenu) elements.btnCollectionMenu.style.display = 'inline-flex';

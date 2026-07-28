@@ -242,19 +242,40 @@ export const CollectionStorage = {
      * @param {string} itemId
      */
     async removeItem(collectionId, itemId) {
+        return this.removeItems(collectionId, [itemId]);
+    },
+
+    /**
+     * 複数アイテムを一度の保存で論理削除
+     * @param {string} collectionId
+     * @param {string[]} itemIds
+     * @returns {Promise<number>} 削除した件数
+     */
+    async removeItems(collectionId, itemIds) {
+        if (!Array.isArray(itemIds) || itemIds.length === 0) return 0;
+
         const collections = await this._getCollectionsRaw();
         const colIndex = collections.findIndex(c => c.id === collectionId);
-        if (colIndex === -1) return;
+        if (colIndex === -1) return 0;
 
+        const idsToDelete = new Set(itemIds);
         const col = collections[colIndex];
-        const items = col.items || [];
-        const itemIndex = items.findIndex(i => i.id === itemId);
-        if (itemIndex !== -1) {
-            items[itemIndex].isDeleted = true;
-            items[itemIndex].updatedAt = Date.now();
-            col.updatedAt = Date.now();
+        const now = Date.now();
+        let deletedCount = 0;
+
+        for (const item of col.items || []) {
+            if (idsToDelete.has(item.id) && !item.isDeleted) {
+                item.isDeleted = true;
+                item.updatedAt = now;
+                deletedCount += 1;
+            }
+        }
+
+        if (deletedCount > 0) {
+            col.updatedAt = now;
             await this._saveCollectionsRaw(collections);
         }
+        return deletedCount;
     },
 
     /**

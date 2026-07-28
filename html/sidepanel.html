@@ -40,6 +40,9 @@
         </button>
         
         <!-- 詳細画面専用: 操作アクション -->
+        <button id="btn-selection-toggle" class="icon-btn" aria-label="複数選択" title="複数選択" style="display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m8 12 2.5 2.5L16 9"/></svg>
+        </button>
         <button id="btn-layout-toggle" class="icon-btn" aria-label="表示切り替え" title="表示切り替え" style="display: none;">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
         </button>
@@ -75,6 +78,14 @@
 
       <!-- コレクション詳細ビュー -->
       <section id="view-detail" class="view">
+        <div id="bulk-actions" class="bulk-actions" hidden>
+          <label class="bulk-select-all">
+            <input id="select-all-items" type="checkbox" aria-label="すべて選択">
+            <span id="selected-count" aria-live="polite">0 / 0件</span>
+          </label>
+          <button id="btn-delete-selected" class="btn btn-danger" disabled>削除</button>
+          <button id="btn-cancel-selection" class="btn btn-secondary">キャンセル</button>
+        </div>
         <div id="items-container" class="items-list-container">
           <div id="virtual-scroll-spacer" class="virtual-scroll-spacer">
             <div id="items-list" class="items-list">

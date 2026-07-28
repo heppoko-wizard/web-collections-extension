@@ -23,6 +23,7 @@ export function initEvents(handlers) {
         if (handlers.updateSettingsUI) handlers.updateSettingsUI();
     });
     elements.btnBack.addEventListener('click', () => {
+        if (handlers.toggleSelectionMode) handlers.toggleSelectionMode(false);
         showView('list');
         handlers.renderCollectionsList();
     });
@@ -35,8 +36,22 @@ export function initEvents(handlers) {
     elements.btnCollectionMenu.addEventListener('click', () => showModal(elements.modalCollectionMenu));
     elements.collectionTitle.addEventListener('blur', handlers.updateCollectionName);
     
+    if (elements.btnSelectionToggle) {
+        elements.btnSelectionToggle.addEventListener('click', handlers.toggleSelectionMode);
+    }
     if (elements.btnLayoutToggle) {
         elements.btnLayoutToggle.addEventListener('click', handlers.toggleLayout);
+    }
+    if (elements.selectAllItems) {
+        elements.selectAllItems.addEventListener('change', (e) => {
+            handlers.setAllItemsSelected(e.target.checked);
+        });
+    }
+    if (elements.btnDeleteSelected) {
+        elements.btnDeleteSelected.addEventListener('click', handlers.deleteSelectedItems);
+    }
+    if (elements.btnCancelSelection) {
+        elements.btnCancelSelection.addEventListener('click', () => handlers.toggleSelectionMode(false));
     }
 
     // Note modal
@@ -169,6 +184,9 @@ export function initEvents(handlers) {
             hideModal(elements.modalCollectionMenu);
             hideModal(elements.modalCreateCollection);
             if (handlers.hideContextMenu) handlers.hideContextMenu();
+            if (state.selectionMode && handlers.toggleSelectionMode) {
+                handlers.toggleSelectionMode(false);
+            }
         }
     });
 
@@ -196,6 +214,19 @@ export function initEvents(handlers) {
         if (item) {
             const url = item.url || item.sourceUrl;
             if (url) chrome.tabs.create({ url, active: false });
+        }
+    });
+
+    elements.itemsContainer.addEventListener('itemSelectionToggle', (e) => {
+        if (handlers.toggleItemSelection) {
+            handlers.toggleItemSelection(e.detail.id);
+        }
+    });
+
+    elements.itemsContainer.addEventListener('change', (e) => {
+        const checkbox = e.target.closest('.item-select-checkbox');
+        if (checkbox && handlers.toggleItemSelection) {
+            handlers.toggleItemSelection(checkbox.dataset.id, checkbox.checked);
         }
     });
 
