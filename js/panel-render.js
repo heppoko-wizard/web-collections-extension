@@ -5,7 +5,7 @@
  */
 
 import { state } from './panel-state.js';
-import { resizeImageToWebp, getImageHash } from './image-cache-helper.js';
+import { resizeImageToWebp, getImageHash, getLocalCachesBulk } from './image-cache-helper.js';
 
 // SVG Icons - Monotone Technical
 const ICONS = {
@@ -312,83 +312,121 @@ function getDomain(url) {
 }
 
 let imageCacheObserver = null;
+const directImageCachePromises = new Map();
+const TRANSPARENT_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
-/**
- * 画像を指定の優先順位であるキャッシュ、直リンク、ドライブでロードし、結果を画像要素へ適用します
- * @param {HTMLImageElement} img - 対象の画像要素
- * @param {string} url - 画像のオリジナルURL
- */
-async function loadAndFallbackImage(img, url) {
-    if (!url) return;
-    const hash = await getImageHash(url);
-    img.setAttribute('data-hash', hash);
-    
-    // すでに処理済みであればスキップする
-    if (img.src && img.src.startsWith('data:') && !img.src.includes('sidepanel.html')) {
+function cacheDirectImage(url) {
+    if (!url || url.startsWith('local-cache://') || directImageCachePromises.has(url)) return;
+
+    const promise = (async () => {
+        try {
+            const resizedDataUrl = await resizeImageToWebp(url);
+            await chrome.runtime.sendMessage({
+                action: 'saveImageCache',
+                url,
+                dataUrl: resizedDataUrl
+            });
+        } catch (err) {
+            console.warn('Rendering: Failed to create direct image cache:', url, err);
+        }
+    })();
+
+    directImageCachePromises.set(url, promise);
+    promise.finally(() => directImageCachePromises.delete(url));
+}
+
+async function loadDriveFallback(img, hash) {
+    if (!img.isConnected || img.dataset.hash !== hash || img.dataset.driveFallbackPending === 'true') {
         return;
     }
 
-    // 段階1：ローカルキャッシュ
+    img.dataset.driveFallbackPending = 'true';
     try {
-        const response = await chrome.runtime.sendMessage({ action: 'getLocalCache', hash });
-        if (response && response.success && response.data) {
+        const response = await chrome.runtime.sendMessage({
+            action: 'getImageCacheFromDrive',
+            hash
+        });
+        if (img.isConnected && img.dataset.hash === hash && response?.success && response.data) {
+            img.dataset.imageResolved = 'drive';
             img.src = response.data;
-            return;
+        } else if (img.isConnected && img.dataset.hash === hash) {
+            img.src = TRANSPARENT_PLACEHOLDER;
         }
     } catch (err) {
-        console.warn('Rendering: Local cache read failed:', err);
+        console.warn('Rendering: Drive fallback failed:', err);
+        if (img.isConnected && img.dataset.hash === hash) {
+            img.src = TRANSPARENT_PLACEHOLDER;
+        }
+    } finally {
+        delete img.dataset.driveFallbackPending;
+    }
+}
+
+async function loadImageBatch(images) {
+    const targets = images.filter(img => img.isConnected && img.dataset.originalSrc);
+    if (targets.length === 0) return;
+
+    const entries = await Promise.all(targets.map(async img => ({
+        img,
+        url: img.dataset.originalSrc,
+        hash: await getImageHash(img.dataset.originalSrc)
+    })));
+
+    let localCaches = {};
+    try {
+        localCaches = await getLocalCachesBulk(entries.map(entry => entry.hash));
+    } catch (err) {
+        console.warn('Rendering: Bulk local image cache read failed:', err);
     }
 
-    // 段階2：直リンク
-    const isLocalCacheUrl = url.startsWith('local-cache://');
-    if (!isLocalCacheUrl) {
-        try {
-            const isLoaded = await new Promise((resolve) => {
-                const temp = new Image();
-                temp.onload = () => resolve(true);
-                temp.onerror = () => resolve(false);
-                temp.src = url;
-            });
+    const missingEntries = [];
+    for (const entry of entries) {
+        const { img, url, hash } = entry;
+        if (!img.isConnected) continue;
+        img.dataset.hash = hash;
 
-            if (isLoaded) {
-                img.src = url;
-                try {
-                    const resizedDataUrl = await resizeImageToWebp(url);
-                    await chrome.runtime.sendMessage({
-                        action: 'saveImageCache',
-                        url: url,
-                        dataUrl: resizedDataUrl
-                    });
-                } catch (resizeErr) {
-                    console.warn('Rendering: Failed to resize and cache direct image:', resizeErr);
-                }
-                return;
+        const localData = localCaches[hash];
+        if (localData) {
+            img.dataset.imageResolved = 'local';
+            img.src = localData;
+            continue;
+        }
+
+        missingEntries.push({ hash, url });
+        if (url.startsWith('local-cache://')) {
+            img.src = TRANSPARENT_PLACEHOLDER;
+            continue;
+        }
+
+        const directLoadTimeout = setTimeout(() => {
+            if (img.isConnected && img.dataset.hash === hash && !img.src.startsWith('data:')) {
+                loadDriveFallback(img, hash);
             }
-        } catch (err) {
-            console.warn('Rendering: Direct link load failed for:', url, err);
-        }
+        }, 10000);
+
+        img.addEventListener('load', () => {
+            clearTimeout(directLoadTimeout);
+            if (!img.src.startsWith('data:')) cacheDirectImage(url);
+        }, { once: true });
+        img.addEventListener('error', () => {
+            clearTimeout(directLoadTimeout);
+            loadDriveFallback(img, hash);
+        }, { once: true });
+
+        // 元URLとDriveキャッシュを並列に開始し、先に成功した方を表示する。
+        img.src = url;
     }
 
-    // 段階3：ドライブ
-    try {
-        const response = await chrome.runtime.sendMessage({ action: 'getImageCacheFromDrive', hash });
-        if (response && response.success && response.data) {
-            img.src = response.data;
-            return;
-        }
-    } catch (err) {
-        console.error('Rendering: Google Drive image fallback failed:', err);
+    if (missingEntries.length > 0) {
+        chrome.runtime.sendMessage({
+            action: 'prefetchImageCachesFromDrive',
+            entries: missingEntries
+        }).catch(err => console.warn('Rendering: Drive image prefetch request failed:', err));
     }
-
-    // すべて失敗した場合は透明なプレースホルダーを設定する
-    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 }
 
 /**
- * ビューポートの中心位置付近にあるアイテムを特定し、その前後20件の画像を非同期でプリフェッチします
- * @param {string} collectionId - 対象のコレクションID
- * @param {number} centerIndex - 基準となる表示インデックス
- * @param {number} range - 前後の取得件数
+ * ビューポート周辺のDriveキャッシュをまとめて先読みする。
  */
 export async function prefetchImagesAroundViewport(collectionId, centerIndex = 0, range = 20) {
     const collection = state.collections.find(c => c.id === collectionId);
@@ -399,90 +437,48 @@ export async function prefetchImagesAroundViewport(collectionId, centerIndex = 0
 
     const start = Math.max(0, centerIndex - range);
     const end = Math.min(items.length - 1, centerIndex + range);
+    const urls = new Set();
 
-    console.log(`Rendering: Prefetching images in range ${start} to ${end} for collection ${collectionId}`);
-
-    const targets = [];
     for (let i = start; i <= end; i++) {
         const item = items[i];
         if (!item || item.isDeleted) continue;
-        
-        let imageUrl = null;
-        if (item.type === 'image') {
-            imageUrl = item.imageUrl || item.content;
-        } else if (item.imageUrl) {
-            imageUrl = item.imageUrl;
-        }
-
-        if (imageUrl && !imageUrl.startsWith('data:')) {
-            targets.push(imageUrl);
-        }
+        const imageUrl = item.type === 'image'
+            ? (item.imageUrl || item.content)
+            : item.imageUrl;
+        if (imageUrl && !imageUrl.startsWith('data:')) urls.add(imageUrl);
     }
 
-    const uniqueUrls = Array.from(new Set(targets));
+    const entries = await Promise.all(Array.from(urls).map(async url => ({
+        url,
+        hash: await getImageHash(url)
+    })));
+    if (entries.length === 0) return;
 
-    uniqueUrls.forEach(async (url) => {
-        const hash = await getImageHash(url);
-        
-        try {
-            const cacheResponse = await chrome.runtime.sendMessage({ action: 'getLocalCache', hash });
-            if (cacheResponse && cacheResponse.success && cacheResponse.data) {
-                return;
-            }
-        } catch (e) {
-            console.warn('Prefetch: Local cache check failed:', e);
-        }
-
-        if (!url.startsWith('local-cache://')) {
-            try {
-                const temp = new Image();
-                temp.onload = async () => {
-                    try {
-                        const resizedDataUrl = await resizeImageToWebp(url);
-                        await chrome.runtime.sendMessage({
-                            action: 'saveImageCache',
-                            url: url,
-                            dataUrl: resizedDataUrl
-                        });
-                    } catch (resizeErr) {
-                        console.warn('Prefetch: Resize failed:', resizeErr);
-                    }
-                };
-                temp.src = url;
-                return;
-            } catch (err) {
-                console.warn('Prefetch: Direct load failed:', err);
-            }
-        }
-
-        try {
-            await chrome.runtime.sendMessage({ action: 'getImageCacheFromDrive', hash });
-        } catch (driveErr) {
-            console.error('Prefetch: Drive download failed:', driveErr);
-        }
-    });
+    chrome.runtime.sendMessage({
+        action: 'prefetchImageCachesFromDrive',
+        entries
+    }).catch(err => console.warn('Prefetch: Drive request failed:', err));
 }
 
 /**
- * レンダリングされた画像要素に対してビューポート優先遅延キャッシュを適用します
+ * レンダリングされた画像要素に対してビューポート優先遅延ロードを適用します
  */
-async function applyImageCaches(container) {
-    const images = container.querySelectorAll('img[data-original-src]');
+function applyImageCaches(container) {
+    const images = Array.from(container.querySelectorAll(
+        'img[data-original-src]:not([data-image-load-bound])'
+    ));
     if (images.length === 0) return;
-    
+
     if (!imageCacheObserver) {
         imageCacheObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const img = entry.target;
-                    const originalSrc = img.getAttribute('data-original-src');
-                    
-                    imageCacheObserver.unobserve(img);
-                    
-                    if (originalSrc) {
-                        loadAndFallbackImage(img, originalSrc);
-                    }
-                }
+            const visibleImages = [];
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                imageCacheObserver.unobserve(entry.target);
+                visibleImages.push(entry.target);
+            }
+            loadImageBatch(visibleImages).catch(err => {
+                console.error('Rendering: Image batch load failed:', err);
             });
         }, {
             root: null,
@@ -490,13 +486,11 @@ async function applyImageCaches(container) {
             threshold: 0.01
         });
     }
-    
-    images.forEach(img => {
-        if (img.src && !img.src.includes('sidepanel.html') && img.src.startsWith('data:')) {
-            return;
-        }
+
+    for (const img of images) {
+        img.dataset.imageLoadBound = 'true';
         imageCacheObserver.observe(img);
-    });
+    }
 }
 
 /**
@@ -505,6 +499,7 @@ async function applyImageCaches(container) {
 export function onImageDownloaded(hash, dataUrl) {
     const images = document.querySelectorAll(`img[data-hash="${hash}"]`);
     images.forEach(img => {
+        img.dataset.imageResolved = 'drive';
         img.src = dataUrl;
     });
 }

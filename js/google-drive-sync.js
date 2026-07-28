@@ -300,9 +300,19 @@ export const GoogleDriveSync = {
                 const lastModifiedTime = storageResult.wc_last_modified_time;
                 
                 if (syncFile) {
-                    // 事前競合チェック: ドライブ上のmodifiedTimeとローカルの最終既知modifiedTimeが異なる場合
-                    // ただし最大試行回数に達した最後のイテレーションでは、同期デッドロックを回避するために競合チェックをスキップして強制プッシュします
-                    if (!forceAll && lastModifiedTime && syncFile.modifiedTime !== lastModifiedTime && attempt < maxRetries) {
+                    // クラウドの既存ファイルを一度もPullしていない端末は、上書き前に必ず取り込む。
+                    if (!lastModifiedTime) {
+                        console.warn('GoogleDriveSync: Existing cloud data has not been pulled on this device. Pulling before push.');
+                        await this.pull(storage, interactive);
+                        continue;
+                    }
+
+                    // modifiedTime が変わっていたら必ず再Pullする。最終試行でも強制上書きしない。
+                    if (syncFile.modifiedTime !== lastModifiedTime) {
+                        if (attempt === maxRetries) {
+                            throw new Error('SyncConflict: cloud data kept changing during push');
+                        }
+
                         console.warn(`GoogleDriveSync: Conflict detected before push (Cloud modifiedTime: ${syncFile.modifiedTime}, Local modifiedTime: ${lastModifiedTime}). Merging cloud data...`);
                         try {
                             await this.pull(storage, interactive);
@@ -310,7 +320,6 @@ export const GoogleDriveSync = {
                             console.error('GoogleDriveSync: Failed to pull cloud data during conflict resolution:', pullErr);
                             throw pullErr;
                         }
-                        // マージされたので、次のリトライイテレーションで最新データを再エクスポートして再試行
                         continue;
                     }
                     
@@ -594,8 +603,7 @@ export const GoogleDriveSync = {
                         syncedAt: Date.now()
                     };
 
-                    const forceWrite = (attempt === maxRetries);
-                    await this.pushImageIndex(cloudIndex, expectedModifiedTime, forceWrite, false);
+                    await this.pushImageIndex(cloudIndex, expectedModifiedTime, false);
                     console.log(`GoogleDriveSync: Successfully registered and indexed image: ${hash}`);
                     break;
                 } catch (indexErr) {
@@ -712,7 +720,7 @@ export const GoogleDriveSync = {
         cloudIndex.images = newImages;
         console.log(`GoogleDriveSync: Rebuilt ${rebuiltCount} unregistered images into index.`);
         
-        await this.pushImageIndex(cloudIndex, expectedModifiedTime, true, interactive);
+        await this.pushImageIndex(cloudIndex, expectedModifiedTime, interactive);
         console.log('GoogleDriveSync: Image index successfully rebuilt and saved to drive.');
         
         return { success: true, rebuiltCount };
@@ -721,7 +729,7 @@ export const GoogleDriveSync = {
     /**
      * 画像インデックスファイルを暗号化してアップロードします（楽観的ロックを適用）
      */
-    async pushImageIndex(indexData, expectedModifiedTime, force = false, interactive = true) {
+    async pushImageIndex(indexData, expectedModifiedTime, interactive = true) {
         const rawJson = JSON.stringify(indexData);
         const compressedBase64 = await this.compressData(rawJson);
         const encryptedData = await encrypt(compressedBase64);
@@ -730,7 +738,7 @@ export const GoogleDriveSync = {
         
         if (indexFile) {
             // 楽観的ロックチェック
-            if (!force && expectedModifiedTime && indexFile.modifiedTime !== expectedModifiedTime) {
+            if (expectedModifiedTime && indexFile.modifiedTime !== expectedModifiedTime) {
                 throw new Error('ImageIndexConflict');
             }
             
@@ -960,10 +968,9 @@ export const GoogleDriveSync = {
                     };
                 });
                 
-                // 3. インデックスファイルを楽観的ロックで書き換え
-                // 最終試行の時は、競合によるデッドロックを防ぐため強制的に書き込みます
-                const forceWrite = (attempt === maxRetries);
-                const newModifiedTime = await this.pushImageIndex(cloudIndex, expectedModifiedTime, forceWrite, interactive);
+                // 3. インデックスファイルを楽観的ロックで書き換える。
+                // 最終試行でも競合相手のインデックスを強制上書きしない。
+                const newModifiedTime = await this.pushImageIndex(cloudIndex, expectedModifiedTime, interactive);
                 console.log('GoogleDriveSync: Successfully saved image index. New modifiedTime:', newModifiedTime);
                 console.log('GoogleDriveSync: Image cache sync completed.');
                 return { success: true };

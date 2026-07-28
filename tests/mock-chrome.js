@@ -120,6 +120,9 @@ globalThis.chrome = {
         }
     },
     runtime: {
+        async sendMessage() {
+            return { success: true };
+        },
         onInstalled: {
             addListener(cb) {
                 listeners.onInstalled = cb;

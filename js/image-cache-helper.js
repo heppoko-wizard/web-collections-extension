@@ -3,6 +3,7 @@
 const DB_NAME = 'WebCollectionsCacheDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'image_cache';
+const MIGRATION_MARKER = 'wc_image_cache_migrated_v1';
 
 let dbInstance = null;
 let migrationPromise = null;
@@ -38,10 +39,16 @@ async function migrateFromStorageLocal() {
     
     migrationPromise = (async () => {
         try {
+            const migrationState = await chrome.storage.local.get(MIGRATION_MARKER);
+            if (migrationState[MIGRATION_MARKER] === true) return;
+
             const allStorage = await chrome.storage.local.get(null);
             const cacheKeys = Object.keys(allStorage).filter(key => key.startsWith('wc_img_cache_'));
-            
-            if (cacheKeys.length === 0) return;
+
+            if (cacheKeys.length === 0) {
+                await chrome.storage.local.set({ [MIGRATION_MARKER]: true });
+                return;
+            }
             
             console.log(`ImageCacheHelper: Migrating ${cacheKeys.length} items from chrome.storage.local to IndexedDB...`);
             const db = await getDB();
@@ -63,6 +70,7 @@ async function migrateFromStorageLocal() {
             });
             
             await chrome.storage.local.remove(keysToDelete);
+            await chrome.storage.local.set({ [MIGRATION_MARKER]: true });
             console.log('ImageCacheHelper: Migration completed successfully.');
         } catch (err) {
             console.error('ImageCacheHelper: Migration failed:', err);
@@ -96,16 +104,24 @@ export async function getImageHash(url) {
  * @param {number} maxDimension - リサイズ時の最大辺のピクセル数
  * @returns {Promise<string>} WebP形式のDataURL
  */
-export async function resizeImageToWebp(imageUrl, maxDimension = 320) {
+export async function resizeImageToWebp(imageUrl, maxDimension = 320, timeoutMs = 10000) {
     let blob;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-        const response = await fetch(imageUrl);
+        const response = await fetch(imageUrl, { signal: controller.signal });
         if (!response.ok) {
             throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
         }
         blob = await response.blob();
     } catch (fetchErr) {
-        throw new Error(`Image fetch failed: ${fetchErr.message}`);
+        const message = fetchErr.name === 'AbortError'
+            ? `Image fetch timed out after ${timeoutMs} ms`
+            : fetchErr.message;
+        throw new Error(`Image fetch failed: ${message}`);
+    } finally {
+        clearTimeout(timeoutId);
     }
 
     const objectUrl = URL.createObjectURL(blob);

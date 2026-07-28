@@ -2,10 +2,12 @@
 import './mock-chrome.js';
 import test from 'node:test';
 import assert from 'node:assert';
-import { mockStorageStore, mockBadge } from './mock-chrome.js';
-import { executeAutoSyncPush, handleMessage } from '../js/background-handlers.js';
+import { mockStorageStore, mockBadge, indexedDBStore } from './mock-chrome.js';
+import { executeAutoSyncPush, executeAutoSyncCycle, handleMessage } from '../js/background-handlers.js';
 import { GoogleDriveSync } from '../js/google-drive-sync.js';
+import { CollectionStorage } from '../js/storage.js';
 import { saveLocalCache } from '../js/image-cache-helper.js';
+import { encrypt } from '../js/encryption-helper.js';
 
 // 同期ロックのタイムアウト自動解放の検証
 test('Sync Lock - should release lock if expired', async (t) => {
@@ -80,6 +82,74 @@ test('Auto Sync - should skip a duplicate run while one is active', async () => 
     }
 });
 
+test('Auto Sync - should pull before push', async () => {
+    delete mockStorageStore['wc_sync_lock'];
+
+    const originalPull = GoogleDriveSync.pull;
+    const originalPush = GoogleDriveSync.push;
+    const calls = [];
+
+    GoogleDriveSync.pull = async () => {
+        calls.push('pull');
+        return { success: true, updated: true, report: {} };
+    };
+    GoogleDriveSync.push = async () => {
+        calls.push('push');
+        return { success: true, report: {} };
+    };
+
+    try {
+        const result = await executeAutoSyncCycle(() => {});
+        assert.strictEqual(result.success, true);
+        assert.deepStrictEqual(calls, ['pull', 'push']);
+    } finally {
+        GoogleDriveSync.pull = originalPull;
+        GoogleDriveSync.push = originalPush;
+    }
+});
+
+test('Data Operations - should not mutate collections during pull', async () => {
+    delete mockStorageStore['wc_sync_lock'];
+
+    const originalPull = GoogleDriveSync.pull;
+    const originalAddItem = CollectionStorage.addItem;
+    const calls = [];
+    let releasePull;
+
+    GoogleDriveSync.pull = async () => {
+        calls.push('pull-start');
+        await new Promise(resolve => {
+            releasePull = resolve;
+        });
+        calls.push('pull-end');
+        return { success: true, updated: false, report: {} };
+    };
+    CollectionStorage.addItem = async () => {
+        calls.push('add');
+        return { id: 'queued-item' };
+    };
+
+    try {
+        const pullRun = handleMessage({ action: 'autoSyncPull', interactive: false });
+        while (!releasePull) await Promise.resolve();
+
+        const addRun = handleMessage({
+            action: 'addItem',
+            collectionId: 'collection-1',
+            item: { title: 'Queued' }
+        });
+        await Promise.resolve();
+        assert.deepStrictEqual(calls, ['pull-start']);
+
+        releasePull();
+        await Promise.all([pullRun, addRun]);
+        assert.deepStrictEqual(calls, ['pull-start', 'pull-end', 'add']);
+    } finally {
+        GoogleDriveSync.pull = originalPull;
+        CollectionStorage.addItem = originalAddItem;
+    }
+});
+
 test('Manual Sync - should run pull then push in one exclusive cycle', async () => {
     delete mockStorageStore['wc_sync_lock'];
 
@@ -131,6 +201,149 @@ test('Auth Failure - should display red badge on auth error', async (t) => {
         assert.strictEqual(mockBadge.color, '#FF5252', 'Badge color should be red on auth error');
     } finally {
         GoogleDriveSync.push = originalPush;
+    }
+});
+
+test('Main Sync - should pull existing cloud data before first push', async () => {
+    delete mockStorageStore.wc_last_modified_time;
+    delete mockStorageStore.wc_pending_image_uploads;
+
+    const originalFindSync = GoogleDriveSync.findSyncFile;
+    const originalPull = GoogleDriveSync.pull;
+    const originalCompress = GoogleDriveSync.compressData;
+    const originalFetch = GoogleDriveSync.fetchWithAuth;
+    let pullCount = 0;
+    let patchCount = 0;
+
+    GoogleDriveSync.findSyncFile = async () => ({ id: 'sync-file', modifiedTime: 'cloud-v1' });
+    GoogleDriveSync.pull = async () => {
+        pullCount += 1;
+        mockStorageStore.wc_last_modified_time = 'cloud-v1';
+        return { success: true, updated: true, report: {} };
+    };
+    GoogleDriveSync.compressData = async () => 'compressed';
+    GoogleDriveSync.fetchWithAuth = async (_url, options) => {
+        if (options.method === 'PATCH') patchCount += 1;
+        return { ok: true, text: async () => '' };
+    };
+
+    const dummyStorage = {
+        async _getCollectionsRaw() { return []; },
+        async _saveCollectionsRaw() {},
+        async getSettings() { return { lastSyncTime: 0 }; },
+        async saveSettings() {},
+        async purgeDeletedData() {},
+        async exportToJson() { return '{}'; }
+    };
+
+    try {
+        await GoogleDriveSync.push(dummyStorage, true, false);
+        assert.strictEqual(pullCount, 1);
+        assert.strictEqual(patchCount, 1);
+    } finally {
+        GoogleDriveSync.findSyncFile = originalFindSync;
+        GoogleDriveSync.pull = originalPull;
+        GoogleDriveSync.compressData = originalCompress;
+        GoogleDriveSync.fetchWithAuth = originalFetch;
+        delete mockStorageStore.wc_last_modified_time;
+    }
+});
+
+test('Main Sync - should fail instead of force-overwriting persistent conflicts', async () => {
+    mockStorageStore.wc_last_modified_time = 'local-v1';
+    delete mockStorageStore.wc_pending_image_uploads;
+
+    const originalFindSync = GoogleDriveSync.findSyncFile;
+    const originalPull = GoogleDriveSync.pull;
+    const originalCompress = GoogleDriveSync.compressData;
+    const originalFetch = GoogleDriveSync.fetchWithAuth;
+    let pullCount = 0;
+    let patchCount = 0;
+
+    GoogleDriveSync.findSyncFile = async () => ({ id: 'sync-file', modifiedTime: 'cloud-v2' });
+    GoogleDriveSync.pull = async () => {
+        pullCount += 1;
+        return { success: true, updated: true, report: {} };
+    };
+    GoogleDriveSync.compressData = async () => 'compressed';
+    GoogleDriveSync.fetchWithAuth = async (_url, options) => {
+        if (options.method === 'PATCH') patchCount += 1;
+        return { ok: true, text: async () => '' };
+    };
+
+    const dummyStorage = {
+        async _getCollectionsRaw() { return []; },
+        async _saveCollectionsRaw() {},
+        async getSettings() { return { lastSyncTime: 0 }; },
+        async saveSettings() {},
+        async purgeDeletedData() {},
+        async exportToJson() { return '{}'; }
+    };
+
+    try {
+        await assert.rejects(
+            GoogleDriveSync.push(dummyStorage, true, false),
+            /SyncConflict/
+        );
+        assert.strictEqual(pullCount, 2);
+        assert.strictEqual(patchCount, 0);
+    } finally {
+        GoogleDriveSync.findSyncFile = originalFindSync;
+        GoogleDriveSync.pull = originalPull;
+        GoogleDriveSync.compressData = originalCompress;
+        GoogleDriveSync.fetchWithAuth = originalFetch;
+        delete mockStorageStore.wc_last_modified_time;
+    }
+});
+
+test('Drive Thumbnails - should share the index and cap concurrent downloads', async () => {
+    const hashes = ['thumb-1', 'thumb-2', 'thumb-3', 'thumb-4', 'thumb-5'];
+    hashes.forEach(hash => indexedDBStore.delete(hash));
+
+    const originalPullImageIndex = GoogleDriveSync.pullImageIndex;
+    const originalDownloadImageCache = GoogleDriveSync.downloadImageCache;
+    let indexPullCount = 0;
+    let downloadCount = 0;
+    let activeDownloads = 0;
+    let maxActiveDownloads = 0;
+    const encryptedThumbnail = await encrypt('data:image/webp;base64,thumbnail');
+
+    GoogleDriveSync.pullImageIndex = async () => {
+        indexPullCount += 1;
+        return {
+            data: {
+                version: 1,
+                images: Object.fromEntries(hashes.map(hash => [hash, { fileId: `file-${hash}` }]))
+            },
+            modifiedTime: 'index-v1'
+        };
+    };
+    GoogleDriveSync.downloadImageCache = async () => {
+        downloadCount += 1;
+        activeDownloads += 1;
+        maxActiveDownloads = Math.max(maxActiveDownloads, activeDownloads);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        activeDownloads -= 1;
+        return encryptedThumbnail;
+    };
+
+    try {
+        const requests = [...hashes, hashes[0]].map(hash => handleMessage({
+            action: 'getImageCacheFromDrive',
+            hash
+        }));
+        const results = await Promise.all(requests);
+
+        assert.strictEqual(indexPullCount, 1);
+        assert.strictEqual(downloadCount, hashes.length);
+        assert.ok(maxActiveDownloads <= 4);
+        results.forEach(result => {
+            assert.strictEqual(result.data, 'data:image/webp;base64,thumbnail');
+        });
+    } finally {
+        GoogleDriveSync.pullImageIndex = originalPullImageIndex;
+        GoogleDriveSync.downloadImageCache = originalDownloadImageCache;
+        hashes.forEach(hash => indexedDBStore.delete(hash));
     }
 });
 

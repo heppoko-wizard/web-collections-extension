@@ -7,33 +7,131 @@ import { decrypt } from './encryption-helper.js';
 
 // ドライブからの画像ダウンロード重複を防ぐためのマップ
 const driveDownloadPromises = new Map();
+const MAX_CONCURRENT_DRIVE_IMAGE_DOWNLOADS = 4;
+const driveImageTaskQueue = [];
+let activeDriveImageDownloads = 0;
 
 // 画像インデックスのインメモリキャッシュ
 let cachedImageIndex = null;
 let cachedImageIndexTime = 0;
+let imageIndexFetchPromise = null;
 const INDEX_CACHE_TTL = 30000;
 
+function drainDriveImageTaskQueue() {
+    while (
+        activeDriveImageDownloads < MAX_CONCURRENT_DRIVE_IMAGE_DOWNLOADS &&
+        driveImageTaskQueue.length > 0
+    ) {
+        const { task, resolve, reject } = driveImageTaskQueue.shift();
+        activeDriveImageDownloads += 1;
+        Promise.resolve()
+            .then(task)
+            .then(resolve, reject)
+            .finally(() => {
+                activeDriveImageDownloads -= 1;
+                drainDriveImageTaskQueue();
+            });
+    }
+}
+
+function scheduleDriveImageTask(task) {
+    return new Promise((resolve, reject) => {
+        driveImageTaskQueue.push({ task, resolve, reject });
+        drainDriveImageTaskQueue();
+    });
+}
+
 /**
- * キャッシュを活用してGoogle Driveから最新の画像インデックスを取得します
+ * キャッシュを活用してGoogle Driveから最新の画像インデックスを取得します。
+ * 同時要求は一つのネットワーク取得へまとめる。
  */
 async function getImageIndexCached() {
     const now = Date.now();
     if (cachedImageIndex && now - cachedImageIndexTime < INDEX_CACHE_TTL) {
         return cachedImageIndex;
     }
+    if (imageIndexFetchPromise) return imageIndexFetchPromise;
+
+    imageIndexFetchPromise = (async () => {
+        try {
+            const pullResult = await GoogleDriveSync.pullImageIndex(false);
+            if (pullResult && pullResult.data) {
+                cachedImageIndex = pullResult.data;
+                cachedImageIndexTime = Date.now();
+            }
+        } catch (err) {
+            console.error('Background: Failed to fetch image index from drive:', err);
+        }
+        return cachedImageIndex || { version: 1, images: {} };
+    })();
 
     try {
-        const pullResult = await GoogleDriveSync.pullImageIndex();
-        if (pullResult && pullResult.data) {
-            cachedImageIndex = pullResult.data;
-            cachedImageIndexTime = now;
-            return cachedImageIndex;
-        }
-    } catch (err) {
-        console.error('Background: Failed to fetch image index from drive:', err);
+        return await imageIndexFetchPromise;
+    } finally {
+        imageIndexFetchPromise = null;
     }
-    
-    return cachedImageIndex || { version: 1, images: {} };
+}
+
+async function downloadDriveImageByHash(hash, fileId) {
+    if (!hash || !fileId) return null;
+    if (driveDownloadPromises.has(hash)) {
+        return driveDownloadPromises.get(hash);
+    }
+
+    const promise = scheduleDriveImageTask(async () => {
+        const encryptedData = await GoogleDriveSync.downloadImageCache(fileId, false);
+        const cachedData = await decrypt(encryptedData);
+        await saveLocalCache(hash, cachedData);
+        chrome.runtime.sendMessage({
+            action: 'imageDownloaded',
+            hash,
+            dataUrl: cachedData
+        }).catch(() => {});
+        return cachedData;
+    });
+
+    driveDownloadPromises.set(hash, promise);
+    try {
+        return await promise;
+    } finally {
+        driveDownloadPromises.delete(hash);
+    }
+}
+
+async function resolveAndDownloadDriveImage(hash, allowSearchFallback = true) {
+    const cloudIndex = await getImageIndexCached();
+    let fileId = cloudIndex?.images?.[hash]?.fileId || null;
+
+    if (!fileId && allowSearchFallback) {
+        const file = await GoogleDriveSync.findImageCacheFileByHash(hash, false);
+        fileId = file?.id || null;
+    }
+
+    return fileId ? downloadDriveImageByHash(hash, fileId) : null;
+}
+
+async function prefetchDriveImages(entries) {
+    const uniqueEntries = Array.from(new Map(
+        (entries || [])
+            .filter(entry => entry?.hash)
+            .map(entry => [entry.hash, entry])
+    ).values());
+    if (uniqueEntries.length === 0) return;
+
+    const hashes = uniqueEntries.map(entry => entry.hash);
+    const localCaches = await getLocalCachesBulk(hashes);
+    const missingEntries = uniqueEntries.filter(entry => !localCaches[entry.hash]);
+    if (missingEntries.length === 0) return;
+
+    const cloudIndex = await getImageIndexCached();
+    await Promise.allSettled(missingEntries.map(async entry => {
+        let fileId = cloudIndex?.images?.[entry.hash]?.fileId || null;
+        if (!fileId && entry.url?.startsWith('local-cache://')) {
+            const file = await GoogleDriveSync.findImageCacheFileByHash(entry.hash, false);
+            fileId = file?.id || null;
+        }
+        if (fileId) await downloadDriveImageByHash(entry.hash, fileId);
+    }));
 }
 
 /**
@@ -59,24 +157,29 @@ async function isSyncLocked() {
     return true;
 }
 
-let syncQueue = Promise.resolve();
-let pendingSyncCount = 0;
+let dataOperationQueue = Promise.resolve();
+let pendingDataOperationCount = 0;
 
 /**
- * Google Drive同期を直列化する。自動同期は処理中または待機中なら重ねずに破棄する。
+ * wc_collections と同期メタデータを扱う処理を一列に並べる。
+ * 自動同期だけは、別処理が実行中なら重ねずにスキップする。
  */
-function runSyncExclusive(task, skipIfBusy = false) {
-    if (skipIfBusy && pendingSyncCount > 0) {
+function runDataExclusive(task, skipIfBusy = false) {
+    if (skipIfBusy && pendingDataOperationCount > 0) {
         return Promise.resolve({ success: true, updated: false, skipped: true });
     }
 
-    pendingSyncCount += 1;
-    const result = syncQueue.then(task, task);
-    syncQueue = result.then(() => undefined, () => undefined);
+    pendingDataOperationCount += 1;
+    const result = dataOperationQueue.then(task, task);
+    dataOperationQueue = result.then(() => undefined, () => undefined);
 
     return result.finally(() => {
-        pendingSyncCount -= 1;
+        pendingDataOperationCount -= 1;
     });
+}
+
+export function executeDataMutation(task) {
+    return runDataExclusive(task);
 }
 
 /**
@@ -123,22 +226,26 @@ async function performAutoSyncPush() {
  * 予約されたPushを、他の同期処理と重複させずに実行する。
  */
 export async function executeAutoSyncPush() {
-    return runSyncExclusive(performAutoSyncPush, true);
+    return runDataExclusive(performAutoSyncPush, true);
 }
 
 /**
  * 定期同期のPushとPullを一つの排他区間で実行する。
  */
 export async function executeAutoSyncCycle(setupContextMenus) {
-    return runSyncExclusive(async () => {
-        const pushResult = await performAutoSyncPush();
-        if (!pushResult.success || pushResult.skipped) return pushResult;
+    return runDataExclusive(async () => {
+        if (await isSyncLocked()) {
+            return { success: true, updated: false, skipped: true };
+        }
 
         const pullResult = await GoogleDriveSync.pull(CollectionStorage, false);
-        if (pullResult.success && pullResult.updated && setupContextMenus) {
+        if (!pullResult.success) return pullResult;
+
+        const pushResult = await performAutoSyncPush();
+        if (pullResult.updated && setupContextMenus) {
             setupContextMenus();
         }
-        return pullResult;
+        return pushResult;
     }, true);
 }
 
@@ -158,40 +265,52 @@ export async function handleMessage(message, setupContextMenus) {
             break;
 
         case 'createCollection':
-            response.data = await CollectionStorage.createCollection(message.name);
-            if (setupContextMenus) setupContextMenus();
-            scheduleAutoSync();
-            break;
+            return runDataExclusive(async () => {
+                response.data = await CollectionStorage.createCollection(message.name);
+                if (setupContextMenus) setupContextMenus();
+                scheduleAutoSync();
+                return response;
+            });
 
         case 'deleteCollection':
-            await CollectionStorage.deleteCollection(message.id);
-            if (setupContextMenus) setupContextMenus();
-            scheduleAutoSync();
-            break;
+            return runDataExclusive(async () => {
+                await CollectionStorage.deleteCollection(message.id);
+                if (setupContextMenus) setupContextMenus();
+                scheduleAutoSync();
+                return response;
+            });
 
         case 'addItem':
-            response.data = await CollectionStorage.addItem(message.collectionId, message.item);
-            if (setupContextMenus) setupContextMenus();
-            scheduleAutoSync();
-            break;
+            return runDataExclusive(async () => {
+                response.data = await CollectionStorage.addItem(message.collectionId, message.item);
+                if (setupContextMenus) setupContextMenus();
+                scheduleAutoSync();
+                return response;
+            });
 
         case 'removeItem':
-            await CollectionStorage.removeItem(message.collectionId, message.itemId);
-            if (setupContextMenus) setupContextMenus();
-            scheduleAutoSync();
-            break;
+            return runDataExclusive(async () => {
+                await CollectionStorage.removeItem(message.collectionId, message.itemId);
+                if (setupContextMenus) setupContextMenus();
+                scheduleAutoSync();
+                return response;
+            });
 
         case 'updateCollection':
-            await CollectionStorage.updateCollection(message.id, message.updates);
-            if (setupContextMenus) setupContextMenus();
-            scheduleAutoSync();
-            break;
+            return runDataExclusive(async () => {
+                await CollectionStorage.updateCollection(message.id, message.updates);
+                if (setupContextMenus) setupContextMenus();
+                scheduleAutoSync();
+                return response;
+            });
 
         case 'updateItem':
-            response.data = await CollectionStorage.updateItem(message.collectionId, message.itemId, message.updates);
-            if (setupContextMenus) setupContextMenus();
-            scheduleAutoSync();
-            break;
+            return runDataExclusive(async () => {
+                response.data = await CollectionStorage.updateItem(message.collectionId, message.itemId, message.updates);
+                if (setupContextMenus) setupContextMenus();
+                scheduleAutoSync();
+                return response;
+            });
 
         case 'getItemsByCollection':
             response.data = await CollectionStorage.getItemsByCollection(message.collectionId);
@@ -203,7 +322,7 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'importJson':
         case 'importFromJson': {
-            return runSyncExclusive(async () => {
+            return runDataExclusive(async () => {
                 await CollectionStorage.importFromJson(message.data);
 
                 // インポートされた過去データを確実に同期するため、lastSyncTime を一時的にリセットします
@@ -235,9 +354,11 @@ export async function handleMessage(message, setupContextMenus) {
         }
 
         case 'importCollection':
-            await CollectionStorage.importCollectionData(message.data);
-            if (setupContextMenus) setupContextMenus();
-            break;
+            return runDataExclusive(async () => {
+                await CollectionStorage.importCollectionData(message.data);
+                if (setupContextMenus) setupContextMenus();
+                return response;
+            });
 
         case 'getModifiedCollections':
             response.data = await CollectionStorage.getModifiedCollections(message.since);
@@ -251,20 +372,23 @@ export async function handleMessage(message, setupContextMenus) {
             response.data = await CollectionStorage.getSettings();
             break;
 
-        case 'saveLastSyncTime': {
-            const settings = await CollectionStorage.getSettings();
-            settings.lastSyncTime = message.time;
-            await CollectionStorage.saveSettings(settings);
-            break;
-        }
+        case 'saveLastSyncTime':
+            return runDataExclusive(async () => {
+                const settings = await CollectionStorage.getSettings();
+                settings.lastSyncTime = message.time;
+                await CollectionStorage.saveSettings(settings);
+                return response;
+            });
 
         case 'saveSettings':
-            await CollectionStorage.saveSettings(message.settings);
-            scheduleAutoSync();
-            break;
+            return runDataExclusive(async () => {
+                await CollectionStorage.saveSettings(message.settings);
+                scheduleAutoSync();
+                return response;
+            });
 
         case 'syncPush':
-            return runSyncExclusive(async () => {
+            return runDataExclusive(async () => {
                 try {
                     if (await isSyncLocked()) {
                         return { success: false, error: 'Sync is locked during migration' };
@@ -277,7 +401,7 @@ export async function handleMessage(message, setupContextMenus) {
             });
 
         case 'syncNow':
-            return runSyncExclusive(async () => {
+            return runDataExclusive(async () => {
                 try {
                     if (await isSyncLocked()) {
                         return { success: false, error: 'Sync is locked during migration' };
@@ -346,181 +470,54 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'getImageCacheFromDrive': {
             const hash = message.hash;
-            if (driveDownloadPromises.has(hash)) {
-                response.data = await driveDownloadPromises.get(hash);
-                break;
-            }
-
-            const downloadPromise = (async () => {
-                let cachedData = null;
+            response.data = await getLocalCache(hash);
+            if (!response.data) {
                 try {
-                    const cloudIndex = await getImageIndexCached();
-                    let fileId = null;
-                    
-                    if (cloudIndex && cloudIndex.images && cloudIndex.images[hash]) {
-                        fileId = cloudIndex.images[hash].fileId;
-                    }
-                    
-                    if (!fileId) {
-                        console.log(`Background: Hash ${hash} not found in index, falling back to search API...`);
-                        const file = await GoogleDriveSync.findImageCacheFileByHash(hash);
-                        if (file) {
-                            fileId = file.id;
-                        }
-                    }
-                    
-                    if (fileId) {
-                        console.log(`Background: Ondemand downloading image cache from drive using fileId: ${fileId}`);
-                        const encryptedData = await GoogleDriveSync.downloadImageCache(fileId);
-                        cachedData = await decrypt(encryptedData);
-                        await saveLocalCache(hash, cachedData);
-                    } else {
-                        console.warn(`Background: Image cache file not found in drive for hash: ${hash}`);
-                    }
+                    response.data = await resolveAndDownloadDriveImage(hash, true);
                 } catch (driveErr) {
                     console.error('Background: Ondemand image download from drive failed:', driveErr);
+                    response.data = null;
                 }
-                return cachedData;
-            })();
-
-            driveDownloadPromises.set(hash, downloadPromise);
-            try {
-                response.data = await downloadPromise;
-            } finally {
-                driveDownloadPromises.delete(hash);
             }
             break;
         }
 
         case 'getImageCache': {
             const hash = await getImageHash(message.url);
-            let cachedData = await getLocalCache(hash);
-            
-            if (!cachedData) {
-                if (driveDownloadPromises.has(hash)) {
-                    response.data = await driveDownloadPromises.get(hash);
-                    break;
-                }
-
-                const downloadPromise = (async () => {
-                    let data = null;
-                    try {
-                        const cloudIndex = await getImageIndexCached();
-                        let fileId = null;
-                        
-                        if (cloudIndex && cloudIndex.images && cloudIndex.images[hash]) {
-                            fileId = cloudIndex.images[hash].fileId;
-                        }
-                        
-                        if (!fileId) {
-                            console.log(`Background: Hash ${hash} not found in index, falling back to search API...`);
-                            const file = await GoogleDriveSync.findImageCacheFileByHash(hash);
-                            if (file) {
-                                fileId = file.id;
-                            }
-                        }
-                        
-                        if (fileId) {
-                            console.log(`Background: Ondemand downloading image cache: ${hash}`);
-                            const encryptedData = await GoogleDriveSync.downloadImageCache(fileId);
-                            data = await decrypt(encryptedData);
-                            await saveLocalCache(hash, data);
-                        }
-                    } catch (driveErr) {
-                        console.error('Background: Ondemand image download failed:', driveErr);
-                    }
-                    return data;
-                })();
-
-                driveDownloadPromises.set(hash, downloadPromise);
+            response.data = await getLocalCache(hash);
+            if (!response.data) {
                 try {
-                    cachedData = await downloadPromise;
-                } finally {
-                    driveDownloadPromises.delete(hash);
+                    response.data = await resolveAndDownloadDriveImage(hash, true);
+                } catch (driveErr) {
+                    console.error('Background: Ondemand image download failed:', driveErr);
+                    response.data = null;
                 }
             }
-            
-            response.data = cachedData;
             break;
         }
 
         case 'getImageCachesBulk': {
-            const urls = message.urls || [];
+            const entries = await Promise.all((message.urls || []).map(async url => ({
+                url,
+                hash: await getImageHash(url)
+            })));
+            const localCaches = await getLocalCachesBulk(entries.map(entry => entry.hash));
             const results = {};
-            
-            // すべてのURLに対応するハッシュ値を算出
-            const hashMap = new Map();
-            const hashes = [];
-            for (const url of urls) {
-                const hash = await getImageHash(url);
-                hashMap.set(hash, url);
-                hashes.push(hash);
+            for (const entry of entries) {
+                if (localCaches[entry.hash]) results[entry.url] = localCaches[entry.hash];
             }
-            
-            // ローカルキャッシュから一括取得
-            const localCaches = await getLocalCachesBulk(hashes);
-            
-            // キャッシュが見つからなかったハッシュのリスト
-            const missingHashes = hashes.filter(hash => !localCaches[hash]);
-            
-            // URLをキーにした結果マップに変換して返却
-            for (const [hash, url] of hashMap.entries()) {
-                if (localCaches[hash]) {
-                    results[url] = localCaches[hash];
-                }
-            }
-            
-            // 即座にレスポンスを返して同期ブロッキングを完全に回避
             response.data = results;
-            
-            // 不足している画像は非同期にバックグラウンドでダウンロードを実行
-            if (missingHashes.length > 0) {
-                (async () => {
-                    try {
-                        const pullResult = await GoogleDriveSync.pullImageIndex();
-                        const cloudIndex = pullResult.data;
-                        
-                        if (cloudIndex && cloudIndex.images) {
-                            const downloadTasks = [];
-                            for (const hash of missingHashes) {
-                                if (cloudIndex.images[hash]) {
-                                    downloadTasks.push({ hash, fileId: cloudIndex.images[hash].fileId });
-                                }
-                            }
-                            
-                            if (downloadTasks.length > 0) {
-                                const maxConcurrency = 3;
-                                const queue = [...downloadTasks];
-                                const runDownload = async () => {
-                                    while (queue.length > 0) {
-                                        const item = queue.shift();
-                                        try {
-                                            console.log(`Background: Non-blocking downloading image cache: ${item.hash}`);
-                                            const encryptedData = await GoogleDriveSync.downloadImageCache(item.fileId);
-                                            const cachedData = await decrypt(encryptedData);
-                                            await saveLocalCache(item.hash, cachedData);
-                                            chrome.runtime.sendMessage({
-                                                action: 'imageDownloaded',
-                                                hash: item.hash,
-                                                dataUrl: cachedData
-                                            }).catch(() => {});
-                                        } catch (err) {
-                                            console.error(`Background: Non-blocking bulk ondemand download failed for ${item.hash}:`, err);
-                                        }
-                                    }
-                                };
-                                
-                                const workers = Array(Math.min(maxConcurrency, queue.length)).fill(null).map(runDownload);
-                                await Promise.all(workers);
-                            }
-                        }
-                    } catch (driveErr) {
-                        console.error('Background: Non-blocking bulk download background task failed:', driveErr);
-                    }
-                })();
-            }
+            prefetchDriveImages(entries).catch(err => {
+                console.error('Background: Bulk image prefetch failed:', err);
+            });
             break;
         }
+
+        case 'prefetchImageCachesFromDrive':
+            prefetchDriveImages(message.entries || []).catch(err => {
+                console.error('Background: Image prefetch failed:', err);
+            });
+            break;
 
         case 'saveImageCache': {
             const hash = await getImageHash(message.url);
@@ -534,7 +531,7 @@ export async function handleMessage(message, setupContextMenus) {
             break;
 
         case 'autoSyncPull':
-            return runSyncExclusive(async () => {
+            return runDataExclusive(async () => {
                 try {
                     if (await isSyncLocked()) {
                         console.log('Background: Auto-sync pull bypassed due to lock');

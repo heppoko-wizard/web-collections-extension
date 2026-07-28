@@ -4,7 +4,7 @@
  */
 
 import { CollectionStorage } from './storage.js';
-import { handleMessage, executeAutoSyncPush, executeAutoSyncCycle } from './background-handlers.js';
+import { handleMessage, executeAutoSyncPush, executeAutoSyncCycle, executeDataMutation } from './background-handlers.js';
 import { getImageHash, saveLocalCache } from './image-cache-helper.js';
 import { GoogleDriveSync } from './google-drive-sync.js';
 
@@ -241,19 +241,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // アイテム追加ハンドラ
 async function handleAddItem(itemData, tab, collectionId = null) {
-    let targetId = collectionId;
+    const targetId = await executeDataMutation(async () => {
+        let resolvedTargetId = collectionId;
 
-    if (!targetId) {
-        let collections = await CollectionStorage.getAllCollections();
-        if (collections.length === 0) {
-            await CollectionStorage.createCollection('マイコレクション');
-            collections = await CollectionStorage.getAllCollections();
+        if (!resolvedTargetId) {
+            let collections = await CollectionStorage.getAllCollections();
+            if (collections.length === 0) {
+                await CollectionStorage.createCollection('マイコレクション');
+                collections = await CollectionStorage.getAllCollections();
+            }
+            resolvedTargetId = collections[0].id;
         }
-        targetId = collections[0].id;
-    }
 
-    await CollectionStorage.addItem(targetId, itemData);
-    await setupContextMenus(); // メニューを再構築してソート順（最新を上）を反映
+        await CollectionStorage.addItem(resolvedTargetId, itemData);
+        return resolvedTargetId;
+    });
+
+    await setupContextMenus(); // メニューを再構築して最新状態を反映
 
     chrome.runtime.sendMessage({
         action: 'collectionUpdated',
