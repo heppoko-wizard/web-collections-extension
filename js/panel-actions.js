@@ -5,10 +5,9 @@
  * 背景（background.js）への通信や状態更新をオーケストレーションする
  */
 
-import { state, updateState } from './panel-state.js';
+import { state } from './panel-state.js';
 import * as Render from './panel-render.js';
 import { elements, showView, showModal, hideModal } from './panel-ui.js';
-import { initDragDrop } from './panel-dragdrop.js';
 
 // Message API Helper
 async function sendMessage(message) {
@@ -27,6 +26,8 @@ async function sendMessage(message) {
         });
     });
 }
+
+let collectionLoadRequestId = 0;
 
 export async function loadCollections() {
     const response = await sendMessage({ action: 'getCollections' });
@@ -59,16 +60,34 @@ export async function saveNewCollection() {
 }
 
 export async function openCollection(id) {
+    const requestId = ++collectionLoadRequestId;
+
     state.currentCollectionId = id;
+    state.currentItems = [];
+    state.isCollectionLoading = true;
     showView('detail');
+    chrome.storage.local.set({
+        wc_current_view: 'detail',
+        wc_current_collection_id: id
+    });
+
+    // 前のコレクションを即座に消し、取得中であることを表示する。
+    Render.renderItems(elements);
+
     try {
         const response = await sendMessage({ action: 'getItemsByCollection', collectionId: id });
-        state.currentItems = response.data;
+        if (requestId !== collectionLoadRequestId || state.currentCollectionId !== id) return;
+        state.currentItems = response.data || [];
     } catch (err) {
+        if (requestId !== collectionLoadRequestId || state.currentCollectionId !== id) return;
         console.error('Failed to get items:', err);
         state.currentItems = [];
+    } finally {
+        if (requestId === collectionLoadRequestId && state.currentCollectionId === id) {
+            state.isCollectionLoading = false;
+            Render.renderItems(elements);
+        }
     }
-    Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
 }
 
 export async function deleteCurrentCollection() {
@@ -123,7 +142,7 @@ export async function addCurrentPage() {
             item
         });
         state.currentItems.unshift(response.data);
-        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
+        Render.renderItems(elements);
     } catch (err) {
         console.error('Failed to add current page:', err);
         alert('ページの追加に失敗しました：' + err.message);
@@ -163,7 +182,7 @@ export async function addCurrentPage() {
     }
 
     if (addedCount > 0) {
-        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
+        Render.renderItems(elements);
     }
     }
 
@@ -185,7 +204,7 @@ export async function saveNote() {
             item: { type: 'note', content }
         });
         state.currentItems.unshift(response.data);
-        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
+        Render.renderItems(elements);
         hideModal(elements.modalNote);
     } catch (err) {
         console.error('Failed to save note:', err);
@@ -201,7 +220,7 @@ export async function deleteItem(itemId) {
             itemId
         });
         state.currentItems = state.currentItems.filter(i => i.id !== itemId);
-        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
+        Render.renderItems(elements);
     } catch (err) {
         console.error('Failed to delete item:', err);
         alert('アイテムの削除に失敗しました：' + err.message);
@@ -219,7 +238,7 @@ export async function updateItem(itemId, updates) {
         const index = state.currentItems.findIndex(i => i.id === itemId);
         if (index !== -1) {
             state.currentItems[index] = response.data;
-            Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
+            Render.renderItems(elements);
         }
     } catch (err) {
         console.error('Failed to update item:', err);
@@ -270,27 +289,6 @@ export async function openAllLinks() {
     });
 }
 
-export async function saveNewOrder(itemIds) {
-    const originalItems = [...state.currentItems];
-    
-    // UIを先行して更新
-    const itemMap = new Map(state.currentItems.map(i => [i.id, i]));
-    state.currentItems = itemIds.map(id => itemMap.get(id)).filter(Boolean);
-
-    try {
-        await sendMessage({
-            action: 'reorderItems',
-            collectionId: state.currentCollectionId,
-            itemIds
-        });
-    } catch (err) {
-        console.error('Failed to save new order:', err);
-        alert('順序の保存に失敗しました。元の順序に戻します。');
-        state.currentItems = originalItems;
-        Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
-    }
-}
-
 export async function loadSettings() {
     const response = await sendMessage({ action: 'getSettings' });
     if (response.success) {
@@ -303,6 +301,12 @@ export async function loadSettings() {
             theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         }
         applyTheme(theme);
+    }
+
+    // 表示モードのロード
+    const local = await chrome.storage.local.get('wc_layout_mode');
+    if (local && local.wc_layout_mode) {
+        state.layoutMode = local.wc_layout_mode;
     }
 }
 
@@ -548,7 +552,8 @@ export async function autoSyncPull() {
 
 export function toggleLayout() {
     state.layoutMode = state.layoutMode === 'list' ? 'grid' : 'list';
-    Render.renderItems(elements, () => initDragDrop(elements, saveNewOrder));
+    Render.renderItems(elements);
+    chrome.storage.local.set({ wc_layout_mode: state.layoutMode });
 }
 
 export async function saveSettings(settings) {
@@ -597,27 +602,14 @@ export async function syncNow() {
     }
 
     try {
-        // 1. プル同期を実行して他デバイスの最新変更をローカルにマージ
-        const pullResult = await sendMessage({ action: 'autoSyncPull' });
-        if (!pullResult.success) {
-            throw new Error(pullResult.error);
-        }
+        // PullとPushをバックグラウンド側の一つの排他区間で実行する。
+        const syncResult = await sendMessage({ action: 'syncNow' });
 
-        // 2. プッシュ同期を実行して最新のローカルデータをクラウドへアップロード
-        const pushResult = await sendMessage({ action: 'syncPush' });
-        if (!pushResult.success) {
-            throw new Error(pushResult.error);
-        }
-
-        // 最終同期時刻を保存
-        await sendMessage({ action: 'saveLastSyncTime', time: Date.now() });
-
-        // 3. UIの更新
         await loadCollections();
         await updateSettingsUI();
 
-        const pullReport = pullResult.report || {};
-        const pushReport = pushResult.report || {};
+        const pullReport = syncResult.pullReport || {};
+        const pushReport = syncResult.pushReport || {};
         
         let msg = '同期が完了しました。\n\n';
         
@@ -676,22 +668,7 @@ export async function syncNowFromHeader() {
     }
 
     try {
-        // 1. プル同期を実行して他デバイスの最新変更をローカルにマージ
-        const pullResult = await sendMessage({ action: 'autoSyncPull' });
-        if (!pullResult.success) {
-            throw new Error(pullResult.error);
-        }
-
-        // 2. プッシュ同期を実行して最新のローカルデータをクラウドへアップロード
-        const pushResult = await sendMessage({ action: 'syncPush' });
-        if (!pushResult.success) {
-            throw new Error(pushResult.error);
-        }
-
-        // 最終同期時刻を保存
-        await sendMessage({ action: 'saveLastSyncTime', time: Date.now() });
-
-        // 3. UIの更新
+        await sendMessage({ action: 'syncNow' });
         await loadCollections();
         await updateSettingsUI();
 

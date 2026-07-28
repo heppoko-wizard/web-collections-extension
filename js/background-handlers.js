@@ -59,6 +59,26 @@ async function isSyncLocked() {
     return true;
 }
 
+let syncQueue = Promise.resolve();
+let pendingSyncCount = 0;
+
+/**
+ * Google Drive同期を直列化する。自動同期は処理中または待機中なら重ねずに破棄する。
+ */
+function runSyncExclusive(task, skipIfBusy = false) {
+    if (skipIfBusy && pendingSyncCount > 0) {
+        return Promise.resolve({ success: true, updated: false, skipped: true });
+    }
+
+    pendingSyncCount += 1;
+    const result = syncQueue.then(task, task);
+    syncQueue = result.then(() => undefined, () => undefined);
+
+    return result.finally(() => {
+        pendingSyncCount -= 1;
+    });
+}
+
 /**
  * 自動同期をスケジュールします
  */
@@ -66,29 +86,28 @@ async function scheduleAutoSync() {
     chrome.alarms.create('deferred-auto-sync-push', { delayInMinutes: 0.5 });
 }
 
-/**
- * 実際の同期実行処理
- */
-export async function executeAutoSyncPush() {
+async function performAutoSyncPush() {
     console.log('Background: Executing scheduled auto-sync...');
     if (await isSyncLocked()) {
         console.log('Background: Auto-sync push bypassed due to lock');
-        return;
+        return { success: true, skipped: true };
     }
+
     try {
         // 自動同期のため、対話的認証ダイアログは非アクティブ (interactive = false) に設定します
         await GoogleDriveSync.push(CollectionStorage, false, false);
-        
+
         // プッシュ成功時に lastSyncTime を自動更新して保存します
         const settings = await CollectionStorage.getSettings();
         settings.lastSyncTime = Date.now();
         await CollectionStorage.saveSettings(settings);
-        
+
         console.log('Background: Auto-sync success');
+        return { success: true };
     } catch (error) {
         console.error('Background: Auto-sync failed:', error);
         if (error.message && (
-            error.message.includes('not signed in') || 
+            error.message.includes('not signed in') ||
             error.message.includes('OAuth2') ||
             error.message.includes('auth') ||
             error.message.includes('authentication')
@@ -96,7 +115,31 @@ export async function executeAutoSyncPush() {
             chrome.action.setBadgeText({ text: '!' });
             chrome.action.setBadgeBackgroundColor({ color: '#FF5252' });
         }
+        return { success: false, error: error.message };
     }
+}
+
+/**
+ * 予約されたPushを、他の同期処理と重複させずに実行する。
+ */
+export async function executeAutoSyncPush() {
+    return runSyncExclusive(performAutoSyncPush, true);
+}
+
+/**
+ * 定期同期のPushとPullを一つの排他区間で実行する。
+ */
+export async function executeAutoSyncCycle(setupContextMenus) {
+    return runSyncExclusive(async () => {
+        const pushResult = await performAutoSyncPush();
+        if (!pushResult.success || pushResult.skipped) return pushResult;
+
+        const pullResult = await GoogleDriveSync.pull(CollectionStorage, false);
+        if (pullResult.success && pullResult.updated && setupContextMenus) {
+            setupContextMenus();
+        }
+        return pullResult;
+    }, true);
 }
 
 /**
@@ -138,12 +181,6 @@ export async function handleMessage(message, setupContextMenus) {
             scheduleAutoSync();
             break;
 
-        case 'reorderItems':
-            await CollectionStorage.reorderItems(message.collectionId, message.itemIds);
-            if (setupContextMenus) setupContextMenus();
-            scheduleAutoSync();
-            break;
-
         case 'updateCollection':
             await CollectionStorage.updateCollection(message.id, message.updates);
             if (setupContextMenus) setupContextMenus();
@@ -166,33 +203,35 @@ export async function handleMessage(message, setupContextMenus) {
 
         case 'importJson':
         case 'importFromJson': {
-            await CollectionStorage.importFromJson(message.data);
-            
-            // インポートされた過去データを確実に同期するため、lastSyncTime を一時的にリセットします
-            const settings = await CollectionStorage.getSettings();
-            const originalLastSyncTime = settings.lastSyncTime;
-            settings.lastSyncTime = 0;
-            await CollectionStorage.saveSettings(settings);
-            
-            try {
-                // 強制的に全件プッシュ同期を実行して即時アップロードを行います
-                await GoogleDriveSync.push(CollectionStorage, true);
-                
-                // 成功したら、最終同期時刻を現在時刻に更新します
-                const updatedSettings = await CollectionStorage.getSettings();
-                updatedSettings.lastSyncTime = Date.now();
-                await CollectionStorage.saveSettings(updatedSettings);
-            } catch (syncError) {
-                console.error('Immediate sync push after import failed:', syncError);
-                // 同期エラーが発生した場合は元の lastSyncTime に戻して次回リトライ可能にします
-                const rollbackSettings = await CollectionStorage.getSettings();
-                rollbackSettings.lastSyncTime = originalLastSyncTime;
-                await CollectionStorage.saveSettings(rollbackSettings);
-                throw syncError;
-            }
+            return runSyncExclusive(async () => {
+                await CollectionStorage.importFromJson(message.data);
 
-            if (setupContextMenus) setupContextMenus();
-            break;
+                // インポートされた過去データを確実に同期するため、lastSyncTime を一時的にリセットします
+                const settings = await CollectionStorage.getSettings();
+                const originalLastSyncTime = settings.lastSyncTime;
+                settings.lastSyncTime = 0;
+                await CollectionStorage.saveSettings(settings);
+
+                try {
+                    // 強制的に全件プッシュ同期を実行して即時アップロードを行います
+                    await GoogleDriveSync.push(CollectionStorage, true);
+
+                    // 成功したら、最終同期時刻を現在時刻に更新します
+                    const updatedSettings = await CollectionStorage.getSettings();
+                    updatedSettings.lastSyncTime = Date.now();
+                    await CollectionStorage.saveSettings(updatedSettings);
+                } catch (syncError) {
+                    console.error('Immediate sync push after import failed:', syncError);
+                    // 同期エラーが発生した場合は元の lastSyncTime に戻して次回リトライ可能にします
+                    const rollbackSettings = await CollectionStorage.getSettings();
+                    rollbackSettings.lastSyncTime = originalLastSyncTime;
+                    await CollectionStorage.saveSettings(rollbackSettings);
+                    throw syncError;
+                }
+
+                if (setupContextMenus) setupContextMenus();
+                return response;
+            });
         }
 
         case 'importCollection':
@@ -225,16 +264,45 @@ export async function handleMessage(message, setupContextMenus) {
             break;
 
         case 'syncPush':
-            try {
-                if (await isSyncLocked()) {
-                    return { success: false, error: 'Sync is locked during migration' };
+            return runSyncExclusive(async () => {
+                try {
+                    if (await isSyncLocked()) {
+                        return { success: false, error: 'Sync is locked during migration' };
+                    }
+                    const result = await GoogleDriveSync.push(CollectionStorage);
+                    return { success: true, report: result.report };
+                } catch (error) {
+                    return { success: false, error: error.message };
                 }
-                const result = await GoogleDriveSync.push(CollectionStorage);
-                return { success: true, report: result.report };
-            } catch (error) {
-                return { success: false, error: error.message };
-            }
-            break;
+            });
+
+        case 'syncNow':
+            return runSyncExclusive(async () => {
+                try {
+                    if (await isSyncLocked()) {
+                        return { success: false, error: 'Sync is locked during migration' };
+                    }
+
+                    const pullResult = await GoogleDriveSync.pull(CollectionStorage, true);
+                    const pushResult = await GoogleDriveSync.push(CollectionStorage, false, true);
+
+                    const settings = await CollectionStorage.getSettings();
+                    settings.lastSyncTime = Date.now();
+                    await CollectionStorage.saveSettings(settings);
+
+                    if (pullResult.updated && setupContextMenus) {
+                        setupContextMenus();
+                    }
+
+                    return {
+                        success: true,
+                        pullReport: pullResult.report || {},
+                        pushReport: pushResult.report || {}
+                    };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            });
         
         case 'rebuildImageIndex': {
             try {
@@ -466,20 +534,22 @@ export async function handleMessage(message, setupContextMenus) {
             break;
 
         case 'autoSyncPull':
-            try {
-                if (await isSyncLocked()) {
-                    console.log('Background: Auto-sync pull bypassed due to lock');
-                    return { success: true, updated: false };
+            return runSyncExclusive(async () => {
+                try {
+                    if (await isSyncLocked()) {
+                        console.log('Background: Auto-sync pull bypassed due to lock');
+                        return { success: true, updated: false };
+                    }
+                    const interactive = message.interactive !== false;
+                    const result = await GoogleDriveSync.pull(CollectionStorage, interactive);
+                    if (result.success && result.updated && setupContextMenus) {
+                        setupContextMenus();
+                    }
+                    return result;
+                } catch (error) {
+                    return { success: false, error: error.message };
                 }
-                const interactive = message.interactive !== false;
-                const result = await GoogleDriveSync.pull(CollectionStorage, interactive);
-                if (result.success && result.updated && setupContextMenus) {
-                    setupContextMenus();
-                }
-                return result;
-            } catch (error) {
-                return { success: false, error: error.message };
-            }
+            });
 
 
 

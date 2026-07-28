@@ -91,7 +91,12 @@ export function showView(viewName) {
     elements.viewDetail.classList.remove('active');
     elements.viewSettings.classList.remove('active');
 
-    // ヘッダー内の全動的要素を初期非表示化
+    // 表示ビューを保存し、詳細ビュー以外ならコレクションID保存をクリア
+    chrome.storage.local.set({ wc_current_view: viewName });
+    if (viewName !== 'detail') {
+        chrome.storage.local.remove('wc_current_collection_id');
+    }
+
     if (elements.btnBack) elements.btnBack.style.display = 'none';
     if (elements.collectionTitle) elements.collectionTitle.style.display = 'none';
     if (elements.btnNewCollection) elements.btnNewCollection.style.display = 'none';

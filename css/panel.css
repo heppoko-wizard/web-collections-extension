@@ -368,17 +368,12 @@ body {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   transition: all var(--transition-fast);
-  cursor: grab;
+  cursor: pointer;
 }
 
 .item-card:hover {
   border-color: var(--border-active);
   background: var(--bg-secondary);
-}
-
-.item-card.dragging {
-  opacity: 0.5;
-  cursor: grabbing;
 }
 
 .item-thumb {

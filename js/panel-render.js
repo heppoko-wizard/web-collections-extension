@@ -23,6 +23,9 @@ const ICONS = {
     LIST: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
 };
 
+const ITEM_RENDER_BATCH_SIZE = 40;
+let itemsRenderGeneration = 0;
+
 /**
  * コレクション一覧のHTMLを生成・描画
  * @param {object} elements 
@@ -72,12 +75,16 @@ export function renderCollectionsList(elements, onOpenCollection) {
 
 /**
  * アイテム一覧の描画
- * @param {object} elements 
- * @param {Function} setupDragAndDrop 
+ * @param {object} elements
  */
-export function renderItems(elements, setupDragAndDrop) {
-    const collection = state.collections.find(c => c.id === state.currentCollectionId);
-    if (!collection) return;
+export function renderItems(elements) {
+    const renderGeneration = ++itemsRenderGeneration;
+    const collectionId = state.currentCollectionId;
+    const collection = state.collections.find(c => c.id === collectionId);
+    if (!collection) {
+        elements.itemsList.innerHTML = '';
+        return;
+    }
 
     elements.collectionTitle.textContent = collection.name;
 
@@ -94,6 +101,16 @@ export function renderItems(elements, setupDragAndDrop) {
         elements.btnLayoutToggle.title = state.layoutMode === 'grid' ? 'リスト表示にする' : 'タイル表示にする';
     }
 
+    if (state.isCollectionLoading) {
+        container.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">${ICONS.COLLECTION}</div>
+        <p>読み込み中...</p>
+      </div>
+    `;
+        return;
+    }
+
     if (!items || items.length === 0) {
         container.innerHTML = `
       <div class="empty-state">
@@ -105,8 +122,29 @@ export function renderItems(elements, setupDragAndDrop) {
         return;
     }
 
-    // Direct native scroll rendering
-    container.innerHTML = items.map(item => renderItem(item)).join('');
+    container.innerHTML = '';
+
+    // 大量データでサイドパネルを固めないよう、描画をフレーム単位に分割する。
+    const renderBatch = (startIndex) => {
+        if (renderGeneration !== itemsRenderGeneration || state.currentCollectionId !== collectionId) {
+            return;
+        }
+
+        const endIndex = Math.min(startIndex + ITEM_RENDER_BATCH_SIZE, items.length);
+        const html = items.slice(startIndex, endIndex).map(item => renderItem(item)).join('');
+        container.insertAdjacentHTML('beforeend', html);
+        applyImageCaches(container);
+
+        if (startIndex === 0) {
+            prefetchImagesAroundViewport(collectionId, 0, 20);
+        }
+
+        if (endIndex < items.length) {
+            requestAnimationFrame(() => renderBatch(endIndex));
+        }
+    };
+
+    renderBatch(0);
 
     // Attach click listener for event delegation if not already attached
     const scrollContainer = elements.itemsContainer;
@@ -146,14 +184,6 @@ export function renderItems(elements, setupDragAndDrop) {
         });
         scrollContainer.dataset.hasScrollListener = 'true';
     }
-
-    // Setup drag and drop
-    if (setupDragAndDrop) setupDragAndDrop();
-
-    applyImageCaches(container);
-
-    // 初期表示時に最初の20件をプリフェッチ
-    prefetchImagesAroundViewport(state.currentCollectionId, 0, 20);
 
     // スクロール時に前後20件のプリフェッチをトリガーする
     if (!scrollContainer.dataset.hasScrollPrefetchListener) {
@@ -242,7 +272,7 @@ export function renderItem(item) {
         : '';
 
     return `
-    <div class="item-card type-${item.type}" draggable="true" data-id="${item.id}">
+    <div class="item-card type-${item.type}" data-id="${item.id}">
       <div class="item-thumb">${thumbContent}</div>
       <div class="item-content">${content}${memoContent}</div>
       <div class="item-actions">

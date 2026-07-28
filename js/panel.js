@@ -3,7 +3,8 @@
  * 各モジュールを初期化し、アプリケーションを起動する
  */
 
-import { initElements } from './panel-ui.js';
+import { initElements, showView } from './panel-ui.js';
+import { state } from './panel-state.js';
 import { initEvents } from './panel-events.js';
 import * as Actions from './panel-actions.js';
 import { onImageDownloaded } from './panel-render.js';
@@ -55,9 +56,23 @@ async function init() {
 
     // 3. 初期データのロード
     await Actions.loadSettings();
-    await Actions.updateSettingsUI();
     await Actions.loadCollections();
     
+    // 4. 最後に開いていた画面とコレクションIDの復元
+    const restored = await chrome.storage.local.get(['wc_current_view', 'wc_current_collection_id']);
+    const restoredCollectionExists = state.collections.some(
+        collection => collection.id === restored.wc_current_collection_id
+    );
+
+    if (restored.wc_current_view === 'detail' && restoredCollectionExists) {
+        await Actions.openCollection(restored.wc_current_collection_id);
+    } else if (restored.wc_current_view === 'settings') {
+        showView('settings');
+        Actions.updateSettingsUI();
+    } else {
+        showView('list');
+    }
+
     // 5. インテントの処理 (コンテキストメニュー等)
     const session = await chrome.storage.session.get('pendingAction');
     if (session.pendingAction === 'createCollection') {
@@ -65,12 +80,8 @@ async function init() {
         Actions.showCreateCollectionModal();
     } else if (session.pendingAction === 'openSettings') {
         await chrome.storage.session.remove('pendingAction');
-        Actions.showView('settings');
+        showView('settings');
     }
-    
-    // 6. 初期ビューの表示
-    // Actions.showView('list') is called inside initEvents via btnBack, etc.
-    // but here we just ensure the UI is correct.
     
     // 6. 自動同期 (Pull)
     Actions.autoSyncPull();

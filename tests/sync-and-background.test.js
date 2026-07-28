@@ -3,7 +3,7 @@ import './mock-chrome.js';
 import test from 'node:test';
 import assert from 'node:assert';
 import { mockStorageStore, mockBadge } from './mock-chrome.js';
-import { executeAutoSyncPush } from '../js/background-handlers.js';
+import { executeAutoSyncPush, handleMessage } from '../js/background-handlers.js';
 import { GoogleDriveSync } from '../js/google-drive-sync.js';
 import { saveLocalCache } from '../js/image-cache-helper.js';
 
@@ -47,6 +47,71 @@ test('Sync Lock - should preserve lock if active', async (t) => {
     } finally {
         GoogleDriveSync.push = originalPush;
         delete mockStorageStore['wc_sync_lock'];
+    }
+});
+
+test('Auto Sync - should skip a duplicate run while one is active', async () => {
+    delete mockStorageStore['wc_sync_lock'];
+
+    const originalPush = GoogleDriveSync.push;
+    let releasePush;
+    let pushCount = 0;
+    GoogleDriveSync.push = async () => {
+        pushCount += 1;
+        await new Promise(resolve => {
+            releasePush = resolve;
+        });
+        return { success: true, report: {} };
+    };
+
+    try {
+        const firstRun = executeAutoSyncPush();
+        await Promise.resolve();
+
+        const duplicateResult = await executeAutoSyncPush();
+        assert.strictEqual(duplicateResult.skipped, true);
+        assert.strictEqual(pushCount, 1);
+
+        releasePush();
+        await firstRun;
+        assert.strictEqual(pushCount, 1);
+    } finally {
+        GoogleDriveSync.push = originalPush;
+    }
+});
+
+test('Manual Sync - should run pull then push in one exclusive cycle', async () => {
+    delete mockStorageStore['wc_sync_lock'];
+
+    const originalPull = GoogleDriveSync.pull;
+    const originalPush = GoogleDriveSync.push;
+    const calls = [];
+    let contextMenuRefreshCount = 0;
+
+    GoogleDriveSync.pull = async () => {
+        calls.push('pull');
+        return { success: true, updated: true, report: { totalTime: 10 } };
+    };
+    GoogleDriveSync.push = async () => {
+        calls.push('push');
+        return { success: true, report: { totalTime: 20 } };
+    };
+
+    try {
+        const result = await handleMessage(
+            { action: 'syncNow' },
+            () => { contextMenuRefreshCount += 1; }
+        );
+
+        assert.deepStrictEqual(calls, ['pull', 'push']);
+        assert.strictEqual(result.success, true);
+        assert.strictEqual(result.pullReport.totalTime, 10);
+        assert.strictEqual(result.pushReport.totalTime, 20);
+        assert.strictEqual(contextMenuRefreshCount, 1);
+        assert.ok(mockStorageStore.wc_settings.lastSyncTime > 0);
+    } finally {
+        GoogleDriveSync.pull = originalPull;
+        GoogleDriveSync.push = originalPush;
     }
 });
 

@@ -12,19 +12,23 @@ export const CollectionStorage = {
     },
 
     /**
-     * ヘルパー：アイテムのsortOrderを正規化する
+     * 端末間で共有できる不変値だけを使い、アイテムを新しい保存順に並べる。
+     * savedAt がない旧データは updatedAt、最後に ID を使って順序を確定する。
      */
-    _normalizeSortOrder(items) {
-        if (!items || items.length === 0) return;
-        items.sort((a, b) => {
-            const orderA = a.sortOrder ?? 0;
-            const orderB = b.sortOrder ?? 0;
-            if (orderA !== orderB) return orderA - orderB;
-            return (b.updatedAt || 0) - (a.updatedAt || 0);
-        });
-        items.forEach((item, idx) => {
-            item.sortOrder = idx;
-        });
+    _compareItemsBySavedAt(a, b) {
+        const savedAtA = Number.isFinite(a.savedAt) ? a.savedAt : (a.updatedAt || 0);
+        const savedAtB = Number.isFinite(b.savedAt) ? b.savedAt : (b.updatedAt || 0);
+        if (savedAtA !== savedAtB) return savedAtB - savedAtA;
+
+        const updatedAtA = a.updatedAt || 0;
+        const updatedAtB = b.updatedAt || 0;
+        if (updatedAtA !== updatedAtB) return updatedAtB - updatedAtA;
+
+        const idA = String(a.id || '');
+        const idB = String(b.id || '');
+        if (idA < idB) return -1;
+        if (idA > idB) return 1;
+        return 0;
     },
 
     /**
@@ -153,7 +157,7 @@ export const CollectionStorage = {
     },
 
     /**
-     * コレクションに属するアイテムを取得（sortOrder順、削除済みを除く）
+     * コレクションに属するアイテムを取得（保存日時の新しい順、削除済みを除く）
      * @param {string} collectionId
      * @param {boolean} includeDeleted - 削除済みのものも含めるか
      * @returns {Promise<Array>} アイテム配列
@@ -163,19 +167,12 @@ export const CollectionStorage = {
         const col = collections.find(c => c.id === collectionId);
         if (!col) return [];
  
-        let items = col.items || [];
+        let items = [...(col.items || [])];
         if (!includeDeleted) {
             items = items.filter(i => !i.isDeleted);
         }
- 
-        items.sort((a, b) => {
-            const orderA = a.sortOrder ?? 0;
-            const orderB = b.sortOrder ?? 0;
-            if (orderA !== orderB) {
-                return orderA - orderB;
-            }
-            return (a.savedAt ?? 0) - (b.savedAt ?? 0);
-        });
+
+        items.sort((a, b) => this._compareItemsBySavedAt(a, b));
         return items;
     },
 
@@ -220,21 +217,20 @@ export const CollectionStorage = {
             }).catch(err => console.warn('Storage: Failed to send saveImageCache message:', err));
         }
 
+        const now = Date.now();
         const newItem = {
             id: this.generateId(),
             collectionId: collectionId,
             ...item,
-            savedAt: Date.now(),
-            sortOrder: -1,
-            updatedAt: Date.now(),
+            savedAt: now,
+            updatedAt: now,
             isDeleted: false
         };
 
         const items = col.items || [];
         items.push(newItem);
-        this._normalizeSortOrder(items);
         col.items = items;
-        col.updatedAt = Date.now();
+        col.updatedAt = now;
 
         await this._saveCollectionsRaw(collections);
         return newItem;
@@ -259,34 +255,6 @@ export const CollectionStorage = {
             col.updatedAt = Date.now();
             await this._saveCollectionsRaw(collections);
         }
-    },
-
-    /**
-     * アイテムの順序を更新
-     * @param {string} collectionId
-     * @param {Array<string>} itemIds - 新しい順序のアイテムID配列
-     */
-    async reorderItems(collectionId, itemIds) {
-        const collections = await this._getCollectionsRaw();
-        const colIndex = collections.findIndex(c => c.id === collectionId);
-        if (colIndex === -1) return;
- 
-        const col = collections[colIndex];
-        const items = col.items || [];
-        const now = Date.now();
- 
-        itemIds.forEach((id, index) => {
-            const item = items.find(i => i.id === id);
-            if (item) {
-                if (item.sortOrder !== index) {
-                    item.sortOrder = index;
-                    item.updatedAt = now;
-                }
-            }
-        });
- 
-        col.updatedAt = now;
-        await this._saveCollectionsRaw(collections);
     },
 
     /**
@@ -389,7 +357,7 @@ export const CollectionStorage = {
         const collections = await this._getCollectionsRaw();
         // エクスポートデータでは、items も含んだものを返す
         const exportedData = collections.map(col => {
-            const items = (col.items || []).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+            const items = [...(col.items || [])].sort((a, b) => this._compareItemsBySavedAt(a, b));
             return {
                 id: col.id,
                 name: col.name,
@@ -449,10 +417,9 @@ export const CollectionStorage = {
                 // アイテムデータのマージ
                 if (col.items && Array.isArray(col.items)) {
                     const localItems = existingCol.items || [];
-                    const formattedItems = col.items.map((item, index) => ({
+                    const formattedItems = col.items.map(item => ({
                         ...item,
                         collectionId: col.id,
-                        sortOrder: item.sortOrder ?? index,
                         updatedAt: item.updatedAt || item.savedAt || Date.now(),
                         isDeleted: item.isDeleted || false
                     }));
@@ -473,16 +440,14 @@ export const CollectionStorage = {
                         }
                     }
                     existingCol.items = Array.from(localItemMap.values());
-                    this._normalizeSortOrder(existingCol.items);
                 }
                 // itemsが未定義の場合は既存のアイテムを保持する
             } else {
                 // 新規コレクションとして追加
                 const items = col.items || [];
-                const formattedItems = items.map((item, index) => ({
+                const formattedItems = items.map(item => ({
                     ...item,
                     collectionId: col.id,
-                    sortOrder: item.sortOrder ?? index,
                     updatedAt: item.updatedAt || item.savedAt || Date.now(),
                     isDeleted: item.isDeleted || false
                 }));
@@ -495,7 +460,6 @@ export const CollectionStorage = {
                     isDeleted: col.isDeleted || false,
                     items: formattedItems
                 };
-                this._normalizeSortOrder(importedCol.items);
                 currentCollections.push(importedCol);
             }
         }
@@ -523,7 +487,7 @@ export const CollectionStorage = {
 
         const items = (col.items || [])
             .filter(i => !i.isDeleted)
-            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+            .sort((a, b) => this._compareItemsBySavedAt(a, b));
 
         return {
             id: col.id,
@@ -583,7 +547,6 @@ export const CollectionStorage = {
                     }
                 }
                 existingCol.items = Array.from(localItemMap.values());
-                this._normalizeSortOrder(existingCol.items);
             }
         } else {
             // 新規コレクションとして追加
@@ -602,7 +565,6 @@ export const CollectionStorage = {
                 isDeleted: data.isDeleted || false,
                 items: newItems
             };
-            this._normalizeSortOrder(importedCol.items);
             collections.push(importedCol);
         }
 

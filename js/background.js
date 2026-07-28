@@ -4,12 +4,21 @@
  */
 
 import { CollectionStorage } from './storage.js';
-import { handleMessage, executeAutoSyncPush } from './background-handlers.js';
+import { handleMessage, executeAutoSyncPush, executeAutoSyncCycle } from './background-handlers.js';
 import { getImageHash, saveLocalCache } from './image-cache-helper.js';
 import { GoogleDriveSync } from './google-drive-sync.js';
 
+async function configureSidePanel() {
+    try {
+        await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    } catch (error) {
+        console.warn('Failed to configure side panel action behavior:', error);
+    }
+}
+
 // 拡張機能インストール・更新時の初期化
 chrome.runtime.onInstalled.addListener(async () => {
+    await configureSidePanel();
     setupContextMenus();
     setupAlarms();
     console.log('Web Collections extension installed');
@@ -17,9 +26,13 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 // ブラウザ起動時のアラームとメニュー登録
 chrome.runtime.onStartup.addListener(() => {
+    configureSidePanel();
     setupAlarms();
     setupContextMenus();
 });
+
+// Service Worker再起動時にもツールバー操作の既定動作を復元する。
+configureSidePanel();
 
 // Service Worker再起動時の防御的アラーム再登録
 (async () => {
@@ -42,9 +55,7 @@ function setupAlarms() {
 // アラームリスナー
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'auto-sync-polling') {
-        // プッシュを実行し、その完了後にプルを呼び出して双方向同期を実現します
-        executeAutoSyncPush()
-            .then(() => handleMessage({ action: 'autoSyncPull', interactive: false }, setupContextMenus))
+        executeAutoSyncCycle(setupContextMenus)
             .catch(err => console.warn('Background Alarm: Bidirectional sync failed', err));
     } else if (alarm.name === 'deferred-auto-sync-push') {
         executeAutoSyncPush()
@@ -269,11 +280,6 @@ async function handleAddItem(itemData, tab, collectionId = null) {
         }
     }, 2000);
 }
-
-// アクションボタンクリック時
-chrome.action.onClicked.addListener(async (tab) => {
-    await chrome.sidePanel.open({ tabId: tab.id });
-});
 
 // メッセージリスナー
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

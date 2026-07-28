@@ -8,6 +8,7 @@ export const state = {
     collections: [],
     currentCollectionId: null,
     currentItems: [],
+    isCollectionLoading: false,
     currentView: 'list', // 'list' | 'detail' | 'settings'
     layoutMode: 'list', // 'list' | 'grid'
     settings: {}

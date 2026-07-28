@@ -269,14 +269,13 @@ test('CollectionStorage - CRUD operations', async (t) => {
         assert.ok(uuidPattern.test(id));
     });
 
-    await t.test('sortOrder normalization on merge conflict', async () => {
+    await t.test('savedAt ordering ignores conflicting sortOrder values', async () => {
         mockStorage.clear();
-        
-        const col = await CollectionStorage.createCollection('SortOrder Test');
-        
+
+        const col = await CollectionStorage.createCollection('SavedAt Test');
         const mergeData = {
             id: col.id,
-            name: 'SortOrder Test',
+            name: 'SavedAt Test',
             updatedAt: Date.now(),
             items: [
                 {
@@ -285,7 +284,8 @@ test('CollectionStorage - CRUD operations', async (t) => {
                     url: 'https://example.com/old',
                     title: 'Old Item',
                     sortOrder: 0,
-                    updatedAt: 1000
+                    savedAt: 1000,
+                    updatedAt: 3000
                 },
                 {
                     id: 'item-new',
@@ -293,6 +293,16 @@ test('CollectionStorage - CRUD operations', async (t) => {
                     url: 'https://example.com/new',
                     title: 'New Item',
                     sortOrder: 0,
+                    savedAt: 2000,
+                    updatedAt: 2000
+                },
+                {
+                    id: 'item-new-b',
+                    type: 'link',
+                    url: 'https://example.com/new-b',
+                    title: 'New Item B',
+                    sortOrder: 99,
+                    savedAt: 2000,
                     updatedAt: 2000
                 }
             ]
@@ -301,12 +311,10 @@ test('CollectionStorage - CRUD operations', async (t) => {
         await CollectionStorage.importFromJson(JSON.stringify(mergeData));
 
         const items = await CollectionStorage.getItemsByCollection(col.id);
-        assert.strictEqual(items.length, 2);
-
-        assert.strictEqual(items[0].sortOrder, 0);
-        assert.strictEqual(items[1].sortOrder, 1);
-
-        assert.strictEqual(items[0].id, 'item-new');
-        assert.strictEqual(items[1].id, 'item-old');
+        assert.deepStrictEqual(items.map(item => item.id), [
+            'item-new',
+            'item-new-b',
+            'item-old'
+        ]);
     });
 });
